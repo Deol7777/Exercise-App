@@ -39,8 +39,15 @@ weekly volume by muscle group), the `/api/progress/**` and
 `/history/[id]` and `/progress` pages. The logging screen shows "last time" per
 exercise from the same endpoint.
 
-Still missing: **no tests** — no runner is installed. Editing a logged set,
-reordering exercises and a pounds display unit are the visible next candidates.
+**Tests exist for the service layer**: Vitest against a local `postgres:17`
+from `docker-compose.yml` on port **5433** — never Neon, and the suite refuses
+to start against a non-localhost `DATABASE_URL`. `src/test/global-setup.ts`
+migrates and seeds it; `src/test/setup.ts` empties the log before each test.
+Tests live next to what they test, as `src/server/services/*.test.ts`.
+
+Still missing: **route handlers, Zod edges and components are untested**, and
+Playwright is chosen but not installed. Editing a logged set, reordering
+exercises and a pounds display unit are the visible next features.
 
 ## Commands
 
@@ -49,6 +56,9 @@ reordering exercises and a pounds display unit are the visible next candidates.
 | `npm run dev` | Development server. Turbopack is the default bundler in Next 16 — there is no flag. |
 | `npm run build` | Production build, including a TypeScript pass. |
 | `npm run lint` | ESLint. |
+| `npm test` | Vitest, once. Starts the Docker test database first via `pretest`. |
+| `npm run test:watch` | Vitest in watch mode. Expects the container to be up already. |
+| `npm run test:db:down` | Stop and remove the test database container. |
 | `npx tsc --noEmit` | Types only, without building. On a fresh clone this fails with `Cannot find name 'LayoutProps'` until `npx next typegen` has run once — Next generates the route types. |
 | `npx next typegen` | Regenerate the route/layout types under `.next/types`. |
 | `npm run db:generate` | Write a new SQL migration from schema changes. Commit what it produces. |
@@ -61,8 +71,8 @@ Environment lives in `.env.local` (gitignored); `.env.example` names every key.
 `DATABASE_URL` is the pooled Neon string and `DATABASE_URL_UNPOOLED` the direct
 one — they are not interchangeable, and swapping them fails only under load.
 
-There is no local Postgres and no Docker: `npm run dev` reads and writes the
-same Neon database as everything else.
+`npm run dev` reads and writes the same Neon database as everything else — the
+Docker Postgres is for the test suite only, and nothing else points at it.
 
 ## Stack
 

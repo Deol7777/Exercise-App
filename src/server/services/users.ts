@@ -7,6 +7,7 @@
 import { compare, hash } from "bcryptjs";
 
 import { findUserByEmail, insertUser } from "../db/queries/users";
+import { isUniqueViolation } from "../db/pg-errors";
 import { ConflictError } from "../errors";
 
 /**
@@ -29,11 +30,24 @@ export async function registerUser(input: {
 
   const passwordHash = await hash(input.password, BCRYPT_COST);
 
-  return insertUser({
-    email: input.email,
-    name: input.name?.trim() || null,
-    passwordHash,
-  });
+  try {
+    return await insertUser({
+      email: input.email,
+      name: input.name?.trim() || null,
+      passwordHash,
+    });
+  } catch (error) {
+    /**
+     * The check above is not a lock: two registrations for the same address can
+     * both pass it and race to the insert. `users.email` is unique, so the
+     * loser gets a constraint violation, and it means the same thing the check
+     * does — an account already exists.
+     */
+    if (isUniqueViolation(error)) {
+      throw new ConflictError("An account with that email already exists.");
+    }
+    throw error;
+  }
 }
 
 /**

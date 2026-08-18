@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | None. No runner is installed. |
+| Tests | Vitest, service-level, against a local Postgres in Docker. 38 tests over `training`, `progress`, `exercises` and `users`. Route handlers and components are not covered. |
 
 ### The API surface
 
@@ -79,6 +79,7 @@ already visible.
 | Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, weekly volume | PostgreSQL |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
+| Tests | `src/**/*.test.ts`, `src/test/**` | Service-level suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
 
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
@@ -189,7 +190,7 @@ record per exercise, and weekly volume by muscle group.
 | | Local | Preview | Production |
 | --- | --- | --- | --- |
 | App | `next dev` | Vercel preview per branch | Vercel production |
-| Database | The same Neon database as everything else — there is no local Postgres and no Docker | Neon branch per preview _(planned)_ | Neon primary |
+| Database | `next dev` uses the same Neon database as everything else. Tests use a local `postgres:17-alpine` from `docker-compose.yml` on port 5433 (ADR 0009) | Neon branch per preview _(planned)_ | Neon primary |
 
 Configuration comes from environment variables (`.env.local` locally, project
 settings on Vercel). Two database URLs are always set and never derived from
@@ -202,9 +203,10 @@ drizzle-kit migrations.
   route types under `.next/types`. On a fresh clone `npx tsc --noEmit` fails
   with `Cannot find name 'LayoutProps'` until `npx next typegen` (or a dev
   server, or a build) has run once.
-- **Development shares the production database.** With no local Postgres, a
-  careless `npm run db:push` or a destructive query in Drizzle Studio hits real
-  data. Per-developer Neon branches are the intended fix and are not set up.
+- **Development shares the production database.** `next dev` still points at the
+  Neon primary, so a careless `npm run db:push` or a destructive query in
+  Drizzle Studio hits real data. The Docker database is for tests only.
+  Per-developer Neon branches are the intended fix and are not set up.
 - **Aggregates cut weeks in the database's timezone**, which on Neon is UTC.
   A user in Auckland or Los Angeles sees a week boundary that is not their
   local Monday, and nothing takes a timezone from the user.
@@ -212,9 +214,18 @@ drizzle-kit migrations.
   converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
   milliseconds turned into a `Date`. A new aggregate that skips the cast returns
   a string that TypeScript will happily call a number.
-- **Nothing is tested.** Vitest and Playwright are chosen but not installed, so
-  the auth path — including the timing-equalised credential check in
-  `verifyCredentials` — is verified by hand or not at all.
+- **The HTTP edge and the UI are untested.** The suite covers domain services
+  and the SQL under them. Route handlers, Zod parsing at the edge and every
+  React component are still verified by hand. Playwright is chosen and not
+  installed.
+- **Tests run on Postgres 17 in Docker, not on Neon.** The pooler, scale-to-zero
+  behaviour and any storage-layer difference are untested; a Neon-only bug still
+  reaches production (ADR 0009).
+- **One unexplained test failure has been seen once.** A full run failed a
+  single test immediately after the `pretest` script was added and has not
+  reproduced in eleven runs since, including on a freshly created database. The
+  output was not captured. The concurrent-registration test is the only
+  non-deterministic one and is the first place to look if it recurs.
 - **Deleting a user fails if they logged a custom exercise.** `exercises`
   cascades from `users`, but `session_exercises.exercise_id` is `restrict` — so
   removing the account tries to remove a catalog row that history still

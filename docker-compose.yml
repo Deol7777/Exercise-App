@@ -1,0 +1,30 @@
+# The test database, and nothing else.
+#
+# ADR 0006 chose Neon for every deployed environment and kept Docker Compose for
+# local use; ADR 0009 makes this the thing the test suite runs against, so a
+# test run never touches the Neon primary that `npm run dev` shares.
+#
+#   docker compose up -d   → then `npm test`
+#
+# Port 5433, not 5432: a Postgres already installed on the machine keeps its
+# port, and a mistyped connection string then fails instead of silently hitting
+# the wrong server.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: exercise-app-test-db
+    environment:
+      POSTGRES_USER: exercise
+      POSTGRES_PASSWORD: exercise
+      POSTGRES_DB: exercise_test
+    ports:
+      - "5433:5432"
+    # No volume on purpose: this database is disposable, and a stale one that
+    # survives a schema change is worse than a slow first run.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exercise -d exercise_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

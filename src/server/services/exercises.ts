@@ -6,6 +6,7 @@
  */
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
+import { isUniqueViolation } from "../db/pg-errors";
 import {
   findVisibleExercise,
   insertCustomExercise,
@@ -45,9 +46,4 @@ export async function createCustomExercise(
     }
     throw error;
   }
-}
-
-/** Postgres `unique_violation`. The pg driver puts the SQLSTATE on `.code`. */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
