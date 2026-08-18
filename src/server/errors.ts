@@ -47,6 +47,13 @@ export class ConflictError extends DomainError {
   }
 }
 
+/** A request that parsed but asks for something the domain does not allow. */
+export class InvalidError extends DomainError {
+  constructor(message = "That is not allowed.") {
+    super("invalid", message);
+  }
+}
+
 export function isDomainError(error: unknown): error is DomainError {
   return error instanceof DomainError;
 }

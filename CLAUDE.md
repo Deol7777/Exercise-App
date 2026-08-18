@@ -24,10 +24,17 @@ catch-all at `/api/auth/[...nextauth]`, `/sign-in`, `/sign-up`, and the
 error-to-status mapping in `src/app/api/_lib/respond.ts`. `currentUserId()` in
 `src/server/auth.ts` is how server code asks who is acting.
 
-Still missing: **everything to do with training data** — no workout session,
-exercise entry or set service, query or handler exists. And **no tests**: no
-runner is installed. The next slice is the workout session → exercise entry →
-set write path.
+**The training write path is built**: `src/server/services/training.ts` and
+`services/exercises.ts` over `db/queries/training.ts` and `queries/exercises.ts`,
+the REST surface under `/api/workout-sessions`, `/api/exercise-entries`,
+`/api/sets` and `/api/exercises`, and the `/log` screen that drives them. Two
+domain rules live in the service layer, not the schema: only one workout session
+may be in progress at a time, and `position` is assigned by the database as
+`max(position) + 1` — never sent by the client.
+
+Still missing: **reading the log back** — history, last performance, personal
+records, weekly volume. And **no tests**: no runner is installed. The next slice
+is the read path.
 
 ## Commands
 

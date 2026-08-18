@@ -20,6 +20,15 @@ export function unauthenticated() {
   return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
 }
 
+/**
+ * A path segment that is not a UUID. Reported as 404 rather than 422: a
+ * malformed id and an id belonging to somebody else must look the same, or the
+ * difference becomes a way to probe for rows.
+ */
+export function notFound(message = "Not found.") {
+  return NextResponse.json({ error: message }, { status: 404 });
+}
+
 /** A body that failed its Zod schema. Field errors are returned so a form can show them. */
 export function invalidBody(error: ZodError) {
   return NextResponse.json(

@@ -16,7 +16,7 @@ export default async function HomePage() {
           <CardTitle>Exercise App</CardTitle>
           <CardDescription>
             {session?.user
-              ? "Signed in. The workout log lands next."
+              ? "Signed in. Start a workout, or pick up the one in progress."
               : "A workout logger. Sign in to record a session."}
           </CardDescription>
         </CardHeader>
@@ -29,7 +29,12 @@ export default async function HomePage() {
                 <dt className="text-muted-foreground mt-2">User id</dt>
                 <dd className="font-mono text-xs">{session.user.id}</dd>
               </dl>
-              <SignOutButton />
+              <div className="flex gap-2">
+                <Button asChild>
+                  <Link href="/log">Open the log</Link>
+                </Button>
+                <SignOutButton />
+              </div>
             </>
           ) : (
             <div className="flex gap-2">

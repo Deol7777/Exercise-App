@@ -5,7 +5,7 @@
 > the per-path flow documents, are kept outside version control on the author's
 > machine; this file is written to stand on its own without them.
 
-_Last reviewed: 2026-08-17_
+_Last reviewed: 2026-08-18_
 
 > Sections marked _(planned)_ are the agreed target shape and have no code
 > behind them yet. Everything else describes what is in the repository.
@@ -24,28 +24,52 @@ not the framework choices, is what the layering exists to protect.
 
 ## What exists today
 
-The authentication slice is built and running against the live database;
-nothing of the training path is.
+The authentication slice and the training **write** path are built and running
+against the live database. Reading history back as progress is not.
 
 | Area | State |
 | --- | --- |
 | Schema | All eight tables migrated (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). One migration, `0000_rapid_the_fury`. |
-| Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. |
+| Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out. Auth.js v5, `jwt` session strategy. `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
-| Route handlers | `POST /api/users` (register) and the Auth.js catch-all at `/api/auth/[...nextauth]`. Nothing else. |
-| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`. |
-| Domain services | `src/server/services/users.ts` only. |
+| Route handlers | Registration, the Auth.js catch-all, the exercise catalog, and the whole workout-session → exercise-entry → set write path. See the table below. |
+| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log` (the logging screen). |
+| Domain services | `users`, `exercises`, `training` in `src/server/services/`. |
+| Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
 | Tests | None. No runner is installed. |
 
-The next slice is the workout session → exercise entry → set write path: its
-services, its handlers and its UI.
+### The API surface
+
+| Method and path | Does |
+| --- | --- |
+| `POST /api/users` | Register. The only route reachable without a session. |
+| `/api/auth/[...nextauth]` | Auth.js: sign in, sign out, session. |
+| `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
+| `POST /api/exercises` | Create a custom exercise, private to the caller. |
+| `GET /api/workout-sessions` | This user's sessions, newest first, with entry and set counts. `?active=true` returns the one in progress, or `null`. |
+| `POST /api/workout-sessions` | Start a session. 409 if one is already in progress. |
+| `GET /api/workout-sessions/[id]` | One session with its exercise entries and their sets. |
+| `PATCH /api/workout-sessions/[id]` | Edit notes and/or `endedAt`. `endedAt: null` reopens it. |
+| `DELETE /api/workout-sessions/[id]` | Delete it, cascading to entries and sets. |
+| `POST /api/workout-sessions/[id]/exercises` | Add an exercise entry to the end of the session. |
+| `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
+| `POST /api/exercise-entries/[id]/sets` | Log a set. |
+| `DELETE /api/sets/[id]` | Remove a set. |
+
+Every one of them takes the acting user from the auth session. A path id that
+belongs to another user is answered `404`, never `403`: the difference would
+itself be a way to probe for rows.
+
+The next slice is reading the log back: session history, the last performance
+of an exercise, personal records and weekly volume by muscle group.
 
 ## Components
 
 | Component | Lives in | Responsibility | Talks to |
 | --- | --- | --- | --- |
-| Web UI | `src/app/**`, `src/components/**` | Render pages; capture set-by-set input fast enough to use between sets | REST API (`fetch` today, TanStack Query _(planned)_), domain services (server components only) |
+| Web UI | `src/app/**`, `src/components/**` | Render pages; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts`, domain services (server components only) |
+| API client | `src/lib/api.ts` | The browser's side of the REST contract: one `apiFetch`, which throws `ApiError` carrying the handler's `{ error, fields }`. No caching — TanStack Query _(planned)_ goes here | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
@@ -53,6 +77,12 @@ services, its handlers and its UI.
 
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
+
+The wire types the API client works with are declared in
+`src/lib/types/training.ts` rather than re-exported from the service layer: a
+client component may not import from `src/server/**`, and the shapes differ
+anyway, because a timestamp is a `Date` in a service and an ISO string once it
+has been through JSON.
 
 ## System shape
 
@@ -102,6 +132,12 @@ These are the lines that are expensive to uncross:
 - **Weight is kilograms in the database, always.** Conversion to and from a
   user's display unit happens at the edges — never in a service, never in a
   query.
+- **Order is assigned by the database, never sent by the client.** A new
+  exercise entry or set goes on the end: `position` is `max(position) + 1`,
+  computed inside the insert statement in `src/server/db/queries/training.ts`.
+- **One workout session in progress at a time.** `ended_at IS NULL` is what "in
+  progress" means, and a second attempt to start one is a `409`. Without it
+  "the current session" is ambiguous for every screen that asks for it.
 - **One UI kit.** shadcn/ui components are copied into `src/components/ui/` and
   edited in place. A second component library does not get added to solve a
   one-component problem.
@@ -167,8 +203,22 @@ drizzle-kit migrations.
 - **Nothing is tested.** Vitest and Playwright are chosen but not installed, so
   the auth path — including the timing-equalised credential check in
   `verifyCredentials` — is verified by hand or not at all.
-- **`src/app/layout.tsx` still carries the scaffold metadata.** Title and
-  description read "Create Next App".
+- **Deleting a user fails if they logged a custom exercise.** `exercises`
+  cascades from `users`, but `session_exercises.exercise_id` is `restrict` — so
+  removing the account tries to remove a catalog row that history still
+  references, and Postgres refuses. Account deletion needs to delete the
+  training data first, and there is no code that does.
+- **A set is written per request, and the screen refetches the whole page.**
+  Every mutation is a `fetch` followed by `router.refresh()`; there is no client
+  cache and no optimistic update, so a set logged on a slow connection shows a
+  visible pause. TanStack Query is chosen for this and not installed.
+- **`position` is left with gaps.** Deleting a set or an exercise entry does not
+  renumber what follows. Order is all `position` is for, and nothing relies on
+  the values being contiguous — but a UI that shows the number will show 1, 2, 4.
+- **Two simultaneous writes to the same entry can collide.** `position` is
+  `max(position) + 1` inside the insert, which is one statement but not a lock:
+  two requests racing for the same slot means one hits the unique index and gets
+  a 500. It takes two devices logging the same exercise at the same instant.
 - **Auth.js `authorize` collapses every failure into `null`.** Deliberate, so
   accounts cannot be enumerated, but it also means a genuine database outage
   during sign-in is indistinguishable from a wrong password.

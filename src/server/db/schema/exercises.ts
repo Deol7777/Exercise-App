@@ -12,27 +12,18 @@
 import { sql } from "drizzle-orm";
 import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
+/** Relative, not the "@/" alias: drizzle-kit and the tsx seed script load this file outside Next's resolver. */
+import { MUSCLE_GROUPS } from "../../../lib/muscle-groups";
+
 import { users } from "./auth";
 
 /**
  * Coarse enough that a movement lands in exactly one group, which is what the
- * volume-per-muscle-group aggregate needs. Adding a value later is a cheap
- * migration; removing or renaming one is not.
+ * volume-per-muscle-group aggregate needs. The values live in
+ * src/lib/muscle-groups.ts because the client needs them too; this is only the
+ * database's view of the same list.
  */
-export const muscleGroup = pgEnum("muscle_group", [
-  "chest",
-  "back",
-  "shoulders",
-  "biceps",
-  "triceps",
-  "forearms",
-  "quads",
-  "hamstrings",
-  "glutes",
-  "calves",
-  "core",
-  "full_body",
-]);
+export const muscleGroup = pgEnum("muscle_group", MUSCLE_GROUPS);
 
 export const exercises = pgTable(
   "exercises",
