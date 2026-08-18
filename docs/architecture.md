@@ -24,18 +24,18 @@ not the framework choices, is what the layering exists to protect.
 
 ## What exists today
 
-The authentication slice and the training **write** path are built and running
-against the live database. Reading history back as progress is not.
+The authentication slice, the training **write** path and the **read** path are
+built and running against the live database.
 
 | Area | State |
 | --- | --- |
 | Schema | All eight tables migrated (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). One migration, `0000_rapid_the_fury`. |
 | Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out. Auth.js v5, `jwt` session strategy. `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
-| Route handlers | Registration, the Auth.js catch-all, the exercise catalog, and the whole workout-session → exercise-entry → set write path. See the table below. |
-| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log` (the logging screen). |
-| Domain services | `users`, `exercises`, `training` in `src/server/services/`. |
-| Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`. |
+| Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
+| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/history`, `/history/[id]`, `/progress`. |
+| Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
+| Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
 | Tests | None. No runner is installed. |
 
@@ -56,13 +56,17 @@ against the live database. Reading history back as progress is not.
 | `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
 | `POST /api/exercise-entries/[id]/sets` | Log a set. |
 | `DELETE /api/sets/[id]` | Remove a set. |
+| `GET /api/exercises/[id]/last-performance` | The previous time this exercise was done. `?exclude=` leaves a session out — the logging screen excludes the one in progress. |
+| `GET /api/progress/personal-records` | The heaviest working set per exercise. |
+| `GET /api/progress/volume` | Working-set volume by muscle group by week. `?weeks=` defaults to 8, clamped 1–52 in the service. |
 
 Every one of them takes the acting user from the auth session. A path id that
 belongs to another user is answered `404`, never `403`: the difference would
 itself be a way to probe for rows.
 
-The next slice is reading the log back: session history, the last performance
-of an exercise, personal records and weekly volume by muscle group.
+The next slice is whatever the log turns out to need in use — editing a logged
+set, reordering exercises, and a display unit in pounds are the three that are
+already visible.
 
 ## Components
 
@@ -72,6 +76,7 @@ of an exercise, personal records and weekly volume by muscle group.
 | API client | `src/lib/api.ts` | The browser's side of the REST contract: one `apiFetch`, which throws `ApiError` carrying the handler's `{ error, fields }`. No caching — TanStack Query _(planned)_ goes here | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
+| Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, weekly volume | PostgreSQL |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
 
@@ -200,6 +205,13 @@ drizzle-kit migrations.
 - **Development shares the production database.** With no local Postgres, a
   careless `npm run db:push` or a destructive query in Drizzle Studio hits real
   data. Per-developer Neon branches are the intended fix and are not set up.
+- **Aggregates cut weeks in the database's timezone**, which on Neon is UTC.
+  A user in Auckland or Los Angeles sees a week boundary that is not their
+  local Monday, and nothing takes a timezone from the user.
+- **`date_trunc` and `sum(numeric)` come back as strings.** Both are cast or
+  converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
+  milliseconds turned into a `Date`. A new aggregate that skips the cast returns
+  a string that TypeScript will happily call a number.
 - **Nothing is tested.** Vitest and Playwright are chosen but not installed, so
   the auth path — including the timing-equalised credential check in
   `verifyCredentials` — is verified by hand or not at all.

@@ -171,7 +171,12 @@ export function WorkoutLogger({
       </Card>
 
       {session.exercises.map((entry) => (
-        <ExerciseEntryCard key={entry.id} entry={entry} onChanged={refresh} />
+        <ExerciseEntryCard
+          key={entry.id}
+          entry={entry}
+          workoutSessionId={session.id}
+          onChanged={refresh}
+        />
       ))}
 
       {session.exercises.length === 0 ? (

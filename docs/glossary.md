@@ -18,6 +18,6 @@ the same thing.
 | _Exercise entry_ | One exercise performed within one workout session, carrying its order in that session and its own notes. The row between session and sets. | _Exercise_ (the definition) | `session_exercises` table |
 | _Set_ | The leaf record: reps at a weight, within an exercise entry. Ordered by `position`. | The JavaScript `Set` type — do not name a variable `set` where both could be meant. | `sets` table |
 | _Working set_ | A set that counts toward volume and personal records: `is_warmup = false`. | _Warm-up set_ — stored identically, excluded from every statistic. | `sets.is_warmup` |
-| _Volume_ | Total `reps × weight` across working sets, over a chosen window. Kilograms. | Set count, session count — say so explicitly if that is what is meant. | aggregation in `src/server/services/**` |
-| _Personal record (PR)_ | The heaviest working set recorded for one exercise by one user. Per-user, never global. | Estimated one-rep max — a calculation, not a record; not currently derived. | aggregation in `src/server/services/**` |
+| _Volume_ | Total `reps × weight` across working sets, over a chosen window. Kilograms. | Set count, session count — say so explicitly if that is what is meant. | `findWeeklyVolume` in `src/server/db/queries/progress.ts` |
+| _Personal record (PR)_ | The heaviest working set recorded for one exercise by one user. Per-user, never global. | Estimated one-rep max — a calculation, not a record; not currently derived. | `findPersonalRecords` in `src/server/db/queries/progress.ts` |
 | _Weight_ | Always kilograms, always `numeric`, as stored. Display units are a presentation concern converted at the edge. | The user's displayed unit (may be pounds). | `sets.weight` |

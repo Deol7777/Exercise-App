@@ -32,9 +32,15 @@ domain rules live in the service layer, not the schema: only one workout session
 may be in progress at a time, and `position` is assigned by the database as
 `max(position) + 1` — never sent by the client.
 
-Still missing: **reading the log back** — history, last performance, personal
-records, weekly volume. And **no tests**: no runner is installed. The next slice
-is the read path.
+**The read path is built**: `src/server/services/progress.ts` over
+`db/queries/progress.ts` (personal records via `distinct on`, last performance,
+weekly volume by muscle group), the `/api/progress/**` and
+`/api/exercises/[id]/last-performance` endpoints, and the `/history`,
+`/history/[id]` and `/progress` pages. The logging screen shows "last time" per
+exercise from the same endpoint.
+
+Still missing: **no tests** — no runner is installed. Editing a logged set,
+reordering exercises and a pounds display unit are the visible next candidates.
 
 ## Commands
 

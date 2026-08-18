@@ -41,9 +41,14 @@ export default async function LogPage() {
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Log</h1>
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/">Home</Link>
-        </Button>
+        <nav className="flex gap-1">
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/history">History</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/progress">Progress</Link>
+          </Button>
+        </nav>
       </header>
 
       <WorkoutLogger

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
-import type { LoggedExerciseEntry, LoggedSet } from "@/lib/types/training";
+import type { LastPerformanceView, LoggedExerciseEntry, LoggedSet } from "@/lib/types/training";
 import { addSetSchema } from "@/lib/validation/training";
 
 /**
@@ -20,13 +20,39 @@ import { addSetSchema } from "@/lib/validation/training";
  */
 export function ExerciseEntryCard({
   entry,
+  workoutSessionId,
   onChanged,
 }: {
   entry: LoggedExerciseEntry;
+  /** Excluded from "last time", so it means the previous session, not this one. */
+  workoutSessionId: string;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  const [lastTime, setLastTime] = useState<LastPerformanceView | null>(null);
+
+  /**
+   * What this exercise was done for last time, fetched once per entry. It is a
+   * prompt, not state the screen depends on, so a failure is swallowed: the
+   * card still logs sets without it.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch<LastPerformanceView | null>(
+      `/api/exercises/${entry.exercise.id}/last-performance?exclude=${workoutSessionId}`,
+    )
+      .then((result) => {
+        if (!cancelled) setLastTime(result);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.exercise.id, workoutSessionId]);
 
   const lastSet = entry.sets.at(-1);
   const [reps, setReps] = useState(String(lastSet?.reps ?? 8));
@@ -100,6 +126,14 @@ export function ExerciseEntryCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {lastTime ? (
+          <p className="text-muted-foreground text-xs tabular-nums">
+            Last time (
+            {new Date(lastTime.startedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+            ): {lastTime.sets.map((set) => `${set.reps} × ${set.weight}`).join(", ")} kg
+          </p>
+        ) : null}
+
         {entry.sets.length ? (
           <ol className="flex flex-col gap-1 text-sm">
             {entry.sets.map((set) => (

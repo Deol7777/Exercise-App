@@ -29,9 +29,15 @@ export default async function HomePage() {
                 <dt className="text-muted-foreground mt-2">User id</dt>
                 <dd className="font-mono text-xs">{session.user.id}</dd>
               </dl>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button asChild>
                   <Link href="/log">Open the log</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/history">History</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/progress">Progress</Link>
                 </Button>
                 <SignOutButton />
               </div>

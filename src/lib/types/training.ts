@@ -51,3 +51,28 @@ export type WorkoutSessionListItem = {
   exerciseCount: number;
   setCount: number;
 };
+
+export type PersonalRecordItem = {
+  exerciseId: string;
+  exerciseName: string;
+  muscleGroup: MuscleGroup;
+  weight: number;
+  reps: number;
+  /** ISO 8601 — the start of the workout session the record was set in. */
+  achievedAt: string;
+};
+
+export type LastPerformanceView = {
+  workoutSessionId: string;
+  startedAt: string;
+  entryNotes: string | null;
+  sets: { position: number; reps: number; weight: number }[];
+};
+
+export type WeeklyVolumeItem = {
+  /** ISO 8601, Monday of the week. */
+  week: string;
+  muscleGroup: MuscleGroup;
+  volume: number;
+  setCount: number;
+};
