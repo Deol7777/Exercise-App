@@ -78,6 +78,30 @@ export function WorkoutLogger({
       "Could not finish the workout session.",
     );
 
+  /**
+   * Moving one entry is expressed as the whole new running order, because that
+   * is what the endpoint takes — the server derives positions 1..n from it.
+   */
+  function onMove(entryId: string, direction: -1 | 1) {
+    if (!session) return;
+
+    const order = session.exercises.map((entry) => entry.id);
+    const from = order.indexOf(entryId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return;
+
+    [order[from], order[to]] = [order[to], order[from]];
+
+    run(
+      () =>
+        apiFetch(`/api/workout-sessions/${session.id}/exercises`, {
+          method: "PATCH",
+          body: JSON.stringify({ order }),
+        }),
+      "Could not reorder the exercises.",
+    );
+  }
+
   function onAddExercise(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session || !exerciseId) return;
@@ -170,12 +194,16 @@ export function WorkoutLogger({
         </CardContent>
       </Card>
 
-      {session.exercises.map((entry) => (
+      {session.exercises.map((entry, index) => (
         <ExerciseEntryCard
           key={entry.id}
           entry={entry}
           workoutSessionId={session.id}
           onChanged={refresh}
+          onMoveUp={index === 0 ? undefined : () => onMove(entry.id, -1)}
+          onMoveDown={
+            index === session.exercises.length - 1 ? undefined : () => onMove(entry.id, 1)
+          }
         />
       ))}
 

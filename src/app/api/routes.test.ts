@@ -24,7 +24,10 @@ import {
   GET as getSession,
   PATCH as patchSession,
 } from "./workout-sessions/[id]/route";
-import { POST as postEntry } from "./workout-sessions/[id]/exercises/route";
+import {
+  PATCH as patchEntryOrder,
+  POST as postEntry,
+} from "./workout-sessions/[id]/exercises/route";
 import { POST as postSet } from "./exercise-entries/[id]/sets/route";
 import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
 import { GET as getRecords } from "./progress/personal-records/route";
@@ -176,6 +179,67 @@ describe("the write path over HTTP", () => {
 
     expect(deleted.status).toBe(204);
     expect(await deleted.text()).toBe("");
+  });
+});
+
+describe("reordering over HTTP", () => {
+  it("takes the full order and answers with the new positions", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    const session = (await started.json()) as { id: string };
+
+    const ids: string[] = [];
+    for (const name of ["Deadlift", "Barbell Row"]) {
+      const added = await postEntry(
+        json(`/api/workout-sessions/${session.id}/exercises`, "POST", {
+          exerciseId: await globalExercise(userId, name),
+        }),
+        context(session.id),
+      );
+      ids.push(((await added.json()) as { id: string }).id);
+    }
+
+    const reordered = await patchEntryOrder(
+      json(`/api/workout-sessions/${session.id}/exercises`, "PATCH", {
+        order: [ids[1], ids[0]],
+      }),
+      context(session.id),
+    );
+
+    expect(reordered.status).toBe(200);
+    expect(await reordered.json()).toEqual([
+      { id: ids[1], position: 1 },
+      { id: ids[0], position: 2 },
+    ]);
+  });
+
+  it("answers 422 for an empty order and for a partial one", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    const session = (await started.json()) as { id: string };
+    await postEntry(
+      json(`/api/workout-sessions/${session.id}/exercises`, "POST", {
+        exerciseId: await globalExercise(userId, "Deadlift"),
+      }),
+      context(session.id),
+    );
+
+    const empty = await patchEntryOrder(
+      json(`/api/workout-sessions/${session.id}/exercises`, "PATCH", { order: [] }),
+      context(session.id),
+    );
+    const foreign = await patchEntryOrder(
+      json(`/api/workout-sessions/${session.id}/exercises`, "PATCH", {
+        order: [UNUSED_UUID],
+      }),
+      context(session.id),
+    );
+
+    expect([empty.status, foreign.status]).toEqual([422, 422]);
   });
 });
 

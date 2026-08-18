@@ -20,6 +20,7 @@ import {
   insertSet,
   insertWorkoutSession,
   listWorkoutSessions,
+  reorderExerciseEntries as reorderExerciseEntryRows,
   updateSet,
   updateWorkoutSession,
   type ExerciseEntryRecord,
@@ -155,6 +156,31 @@ export async function addExerciseEntry(
     exercise: { id: exercise.id, name: exercise.name, muscleGroup: exercise.muscleGroup },
     sets: [],
   };
+}
+
+/**
+ * Puts a session's exercise entries in the given order. The body must list
+ * every entry exactly once — a partial list is rejected rather than guessed at,
+ * because "move this one to the front" and "delete the rest" would otherwise be
+ * the same request.
+ *
+ * A side effect worth knowing: this also closes any gaps left by deletions,
+ * because the new positions are 1..n.
+ */
+export async function reorderExerciseEntries(
+  userId: string,
+  workoutSessionId: string,
+  orderedEntryIds: string[],
+): Promise<{ id: string; position: number }[]> {
+  const session = await findWorkoutSession(userId, workoutSessionId);
+  if (!session) throw new NotFoundError("That workout session does not exist.");
+
+  const reordered = await reorderExerciseEntryRows(userId, workoutSessionId, orderedEntryIds);
+  if (!reordered) {
+    throw new InvalidError("List every exercise in the session exactly once.");
+  }
+
+  return reordered;
 }
 
 export async function removeExerciseEntry(userId: string, entryId: string): Promise<void> {

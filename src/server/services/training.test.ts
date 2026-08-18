@@ -10,6 +10,7 @@ import { DomainError } from "../errors";
 import {
   addExerciseEntry,
   editSet,
+  reorderExerciseEntries,
   editWorkoutSession,
   finishWorkoutSession,
   getActiveWorkoutSession,
@@ -154,6 +155,124 @@ describe("ordering", () => {
 
     const next = await logSet(userId, entry.id, { reps: 8, weight: 0 });
     expect(next.position).toBe(2);
+  });
+});
+
+describe("reordering exercise entries", () => {
+  /** Three entries, in the order they were added. */
+  async function sessionWithThree(userId: string) {
+    const session = await startWorkoutSession(userId);
+    const entries = [];
+    for (const name of ["Barbell Bench Press", "Barbell Row", "Back Squat"]) {
+      entries.push(
+        await addExerciseEntry(userId, session.id, {
+          exerciseId: await globalExercise(userId, name),
+        }),
+      );
+    }
+    return { session, entries };
+  }
+
+  const namesInOrder = async (userId: string, sessionId: string) =>
+    (await getWorkoutSession(userId, sessionId)).exercises.map((entry) => entry.exercise.name);
+
+  it("rewrites the running order", async () => {
+    const userId = await createUser();
+    const { session, entries } = await sessionWithThree(userId);
+
+    const result = await reorderExerciseEntries(userId, session.id, [
+      entries[2].id,
+      entries[0].id,
+      entries[1].id,
+    ]);
+
+    expect(result.map((row) => row.position)).toEqual([1, 2, 3]);
+    expect(await namesInOrder(userId, session.id)).toEqual([
+      "Back Squat",
+      "Barbell Bench Press",
+      "Barbell Row",
+    ]);
+  });
+
+  it("survives a swap that would collide with a position still in use", async () => {
+    const userId = await createUser();
+    const { session, entries } = await sessionWithThree(userId);
+
+    /** 1 <-> 2 is the case a naive per-row update breaks on. */
+    await reorderExerciseEntries(userId, session.id, [
+      entries[1].id,
+      entries[0].id,
+      entries[2].id,
+    ]);
+
+    expect(await namesInOrder(userId, session.id)).toEqual([
+      "Barbell Row",
+      "Barbell Bench Press",
+      "Back Squat",
+    ]);
+  });
+
+  it("closes gaps left by a deletion", async () => {
+    const userId = await createUser();
+    const { session, entries } = await sessionWithThree(userId);
+    await removeExerciseEntry(userId, entries[1].id);
+
+    const before = await getWorkoutSession(userId, session.id);
+    expect(before.exercises.map((entry) => entry.position)).toEqual([1, 3]);
+
+    await reorderExerciseEntries(userId, session.id, [entries[0].id, entries[2].id]);
+
+    const after = await getWorkoutSession(userId, session.id);
+    expect(after.exercises.map((entry) => entry.position)).toEqual([1, 2]);
+  });
+
+  it("rejects a list that is not exactly the session's entries", async () => {
+    const userId = await createUser();
+    const { session, entries } = await sessionWithThree(userId);
+
+    /** Too few. */
+    expect(await codeOf(() => reorderExerciseEntries(userId, session.id, [entries[0].id]))).toBe(
+      "invalid",
+    );
+    /** A duplicate, standing in for a missing one. */
+    expect(
+      await codeOf(() =>
+        reorderExerciseEntries(userId, session.id, [entries[0].id, entries[0].id, entries[1].id]),
+      ),
+    ).toBe("invalid");
+    /** An id from nowhere. */
+    expect(
+      await codeOf(() =>
+        reorderExerciseEntries(userId, session.id, [
+          entries[0].id,
+          entries[1].id,
+          "00000000-0000-4000-8000-000000000000",
+        ]),
+      ),
+    ).toBe("invalid");
+
+    /** And the order is untouched by any of it. */
+    expect(await namesInOrder(userId, session.id)).toEqual([
+      "Barbell Bench Press",
+      "Barbell Row",
+      "Back Squat",
+    ]);
+  });
+
+  it("refuses another user's session", async () => {
+    const owner = await createUser();
+    const stranger = await createUser();
+    const { session, entries } = await sessionWithThree(owner);
+
+    expect(
+      await codeOf(() =>
+        reorderExerciseEntries(stranger, session.id, [
+          entries[2].id,
+          entries[1].id,
+          entries[0].id,
+        ]),
+      ),
+    ).toBe("not_found");
   });
 });
 

@@ -22,11 +22,16 @@ export function ExerciseEntryCard({
   entry,
   workoutSessionId,
   onChanged,
+  onMoveUp,
+  onMoveDown,
 }: {
   entry: LoggedExerciseEntry;
   /** Excluded from "last time", so it means the previous session, not this one. */
   workoutSessionId: string;
   onChanged: () => void;
+  /** Undefined at the ends of the list, which is what disables the control. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -120,8 +125,30 @@ export function ExerciseEntryCard({
           <span>
             {entry.position}. {entry.exercise.name}
           </span>
-          <span className="text-muted-foreground text-xs font-normal">
-            {MUSCLE_GROUP_LABELS[entry.exercise.muscleGroup]}
+          <span className="flex items-center gap-1">
+            <span className="text-muted-foreground text-xs font-normal">
+              {MUSCLE_GROUP_LABELS[entry.exercise.muscleGroup]}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!onMoveUp}
+              onClick={onMoveUp}
+              aria-label={`Move ${entry.exercise.name} up`}
+            >
+              ↑
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!onMoveDown}
+              onClick={onMoveDown}
+              aria-label={`Move ${entry.exercise.name} down`}
+            >
+              ↓
+            </Button>
           </span>
         </CardTitle>
       </CardHeader>

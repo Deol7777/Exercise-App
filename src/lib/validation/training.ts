@@ -63,6 +63,15 @@ export const updateSetSchema = addSetSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, "Send at least one field to change.");
 
+/**
+ * The new order of a session's exercise entries: every entry id, once, in the
+ * order they should appear. Positions themselves are still not client input —
+ * the server derives 1..n from this list.
+ */
+export const reorderExerciseEntriesSchema = z.object({
+  order: z.array(z.uuid()).min(1, "List the exercises in their new order."),
+});
+
 export const createExerciseSchema = z.object({
   name: z.string().trim().min(1, "Name the exercise.").max(120),
   muscleGroup: z.enum(MUSCLE_GROUPS, "Pick a muscle group."),
@@ -73,4 +82,5 @@ export type UpdateWorkoutSessionInput = z.infer<typeof updateWorkoutSessionSchem
 export type AddExerciseEntryInput = z.infer<typeof addExerciseEntrySchema>;
 export type AddSetInput = z.infer<typeof addSetSchema>;
 export type UpdateSetInput = z.infer<typeof updateSetSchema>;
+export type ReorderExerciseEntriesInput = z.infer<typeof reorderExerciseEntriesSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;

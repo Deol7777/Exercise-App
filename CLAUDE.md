@@ -48,8 +48,8 @@ domain rules, `src/app/api/routes.test.ts` for the HTTP contract (401/404/422,
 status mapping, cross-user isolation) with `currentUserId` mocked.
 
 Still missing: **components are untested** and Playwright is chosen but not
-installed. Reordering exercises and a pounds display unit are the visible next
-features.
+installed. A pounds display unit is the visible next feature; sets cannot be
+reordered (exercise entries can).
 
 ## Commands
 

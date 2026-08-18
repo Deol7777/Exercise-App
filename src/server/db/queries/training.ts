@@ -209,6 +209,69 @@ export async function findExerciseEntry(
   return row ?? null;
 }
 
+/**
+ * Rewrites the order of a session's exercise entries in one transaction.
+ *
+ * `session_exercises_position_unique` is a plain unique constraint, not a
+ * deferrable one, so positions cannot be assigned straight to their new values
+ * — the first write would collide with a row that has not moved yet. Every row
+ * is therefore shifted above the current maximum first, then written down to
+ * its final place. Negative temporaries would be simpler and are not available:
+ * `session_exercises_position_positive` requires `position >= 1`.
+ *
+ * `for update` locks the session's rows for the length of the transaction, so
+ * two reorders of the same session serialise instead of interleaving.
+ *
+ * Returns null when the session is not this user's, or when `orderedEntryIds`
+ * is not exactly the set of entries it holds.
+ */
+export async function reorderExerciseEntries(
+  userId: string,
+  workoutSessionId: string,
+  orderedEntryIds: string[],
+): Promise<{ id: string; position: number }[] | null> {
+  return db.transaction(async (tx) => {
+    const [session] = await tx
+      .select({ id: workoutSessions.id })
+      .from(workoutSessions)
+      .where(and(eq(workoutSessions.id, workoutSessionId), eq(workoutSessions.userId, userId)))
+      .limit(1);
+
+    if (!session) return null;
+
+    const current = await tx
+      .select({ id: sessionExercises.id, position: sessionExercises.position })
+      .from(sessionExercises)
+      .where(eq(sessionExercises.workoutSessionId, workoutSessionId))
+      .for("update");
+
+    const known = new Set(current.map((row) => row.id));
+    const requested = new Set(orderedEntryIds);
+    const isPermutation =
+      known.size === requested.size && [...requested].every((id) => known.has(id));
+
+    if (!isPermutation) return null;
+    if (current.length === 0) return [];
+
+    /** Above every position in use, so the shift itself cannot collide. */
+    const offset = Math.max(...current.map((row) => row.position)) + current.length;
+
+    await tx
+      .update(sessionExercises)
+      .set({ position: sql`${sessionExercises.position} + ${offset}` })
+      .where(eq(sessionExercises.workoutSessionId, workoutSessionId));
+
+    for (const [index, entryId] of orderedEntryIds.entries()) {
+      await tx
+        .update(sessionExercises)
+        .set({ position: index + 1 })
+        .where(eq(sessionExercises.id, entryId));
+    }
+
+    return orderedEntryIds.map((id, index) => ({ id, position: index + 1 }));
+  });
+}
+
 export async function deleteExerciseEntry(userId: string, entryId: string): Promise<boolean> {
   const entry = await findExerciseEntry(userId, entryId);
   if (!entry) return false;

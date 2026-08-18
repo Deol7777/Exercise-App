@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 52 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 59 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -53,6 +53,7 @@ built and running against the live database.
 | `PATCH /api/workout-sessions/[id]` | Edit notes and/or `endedAt`. `endedAt: null` reopens it. |
 | `DELETE /api/workout-sessions/[id]` | Delete it, cascading to entries and sets. |
 | `POST /api/workout-sessions/[id]/exercises` | Add an exercise entry to the end of the session. |
+| `PATCH /api/workout-sessions/[id]/exercises` | Rewrite the running order. Takes every entry id exactly once; a partial list is a 422. |
 | `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
 | `POST /api/exercise-entries/[id]/sets` | Log a set. |
 | `PATCH /api/sets/[id]` | Correct a logged set's reps, weight or warm-up flag. `position` is not editable. |
@@ -142,6 +143,9 @@ These are the lines that are expensive to uncross:
 - **Order is assigned by the database, never sent by the client.** A new
   exercise entry or set goes on the end: `position` is `max(position) + 1`,
   computed inside the insert statement in `src/server/db/queries/training.ts`.
+  Reordering is the one exception and still sends no positions: the client sends
+  the full list of entry ids, and the server derives 1..n from it inside a
+  transaction (ADR 0010).
 - **One workout session in progress at a time.** `ended_at IS NULL` is what "in
   progress" means, and a second attempt to start one is a `409`. Without it
   "the current session" is ambiguous for every screen that asks for it.
@@ -239,8 +243,11 @@ drizzle-kit migrations.
   cache and no optimistic update, so a set logged on a slow connection shows a
   visible pause. TanStack Query is chosen for this and not installed.
 - **`position` is left with gaps.** Deleting a set or an exercise entry does not
-  renumber what follows. Order is all `position` is for, and nothing relies on
-  the values being contiguous — but a UI that shows the number will show 1, 2, 4.
+  renumber what follows, so a UI that prints the number shows 1, 2, 4. A reorder
+  closes the gaps for exercise entries as a side effect; sets have no reorder,
+  so their gaps stay.
+- **A stale client can silently undo a reorder.** The order is sent whole and
+  the last write wins; nothing versions a session (ADR 0010).
 - **Two simultaneous writes to the same entry can collide.** `position` is
   `max(position) + 1` inside the insert, which is one statement but not a lock:
   two requests racing for the same slot means one hits the unique index and gets

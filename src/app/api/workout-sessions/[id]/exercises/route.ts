@@ -1,5 +1,7 @@
 /**
- * POST /api/workout-sessions/[id]/exercises — add an exercise entry.
+ * /api/workout-sessions/[id]/exercises — the exercise entries in one session.
+ *
+ * POST adds one to the end. PATCH rewrites their order.
  *
  * One performance of a catalog exercise inside this session. `position` is not
  * accepted from the client: the entry goes on the end, and the database decides
@@ -7,9 +9,12 @@
  */
 import { NextResponse } from "next/server";
 
-import { addExerciseEntrySchema } from "@/lib/validation/training";
+import {
+  addExerciseEntrySchema,
+  reorderExerciseEntriesSchema,
+} from "@/lib/validation/training";
 import { currentUserId } from "@/server/auth";
-import { addExerciseEntry } from "@/server/services/training";
+import { addExerciseEntry, reorderExerciseEntries } from "@/server/services/training";
 
 import { isUuid } from "../../../_lib/params";
 import { fromError, invalidBody, notFound, unauthenticated } from "../../../_lib/respond";
@@ -29,6 +34,24 @@ export async function POST(request: Request, { params }: Context) {
   try {
     const entry = await addExerciseEntry(userId, id, parsed.data);
     return NextResponse.json(entry, { status: 201 });
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/** PATCH takes the full running order; a partial list is a 422, not a guess. */
+export async function PATCH(request: Request, { params }: Context) {
+  const userId = await currentUserId();
+  if (!userId) return unauthenticated();
+
+  const { id } = await params;
+  if (!isUuid(id)) return notFound("That workout session does not exist.");
+
+  const parsed = reorderExerciseEntriesSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return invalidBody(parsed.error);
+
+  try {
+    return NextResponse.json(await reorderExerciseEntries(userId, id, parsed.data.order));
   } catch (error) {
     return fromError(error);
   }
