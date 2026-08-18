@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 72 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 72 tests, plus 3 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -83,6 +83,7 @@ already visible.
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
 | Tests | `src/**/*.test.ts`, `src/test/**` | Service and handler suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
+| End-to-end | `e2e/**`, `playwright.config.ts` | A real browser against `next dev` on port 3100: sign-up, logging, unit switching, cross-user isolation. The only suite that runs Auth.js for real | Next server → local PostgreSQL |
 
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
@@ -221,12 +222,17 @@ drizzle-kit migrations.
   converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
   milliseconds turned into a `Date`. A new aggregate that skips the cast returns
   a string that TypeScript will happily call a number.
-- **The UI is untested.** Handlers and services are covered; every React
-  component is still verified by hand, including the inline set editor.
-  Playwright is chosen and not installed.
-- **Handler tests mock the session, so Auth.js itself is never exercised.**
-  `currentUserId` is replaced wholesale, which is what makes the tests possible
-  and also means a break in the real JWT callback chain would not fail them.
+- **Component coverage is only what the three end-to-end journeys walk
+  through.** There is no component-level test runner — no jsdom, no Testing
+  Library — so a component off those paths is verified by hand.
+- **Handler tests mock the session.** `currentUserId` is replaced wholesale in
+  `src/app/api/routes.test.ts`; the end-to-end suite is what actually exercises
+  Auth.js, and it does so in three paths only.
+- **The end-to-end suite needs a matching browser build.** `npx playwright
+  install chromium` after a Playwright upgrade, or every spec fails on launch.
+- **Switching the display unit is fire-and-forget.** The select PATCHes and does
+  not block; navigating in the same instant can abandon the write, and the
+  control will have already moved. The window is small and real.
 - **Tests run on Postgres 17 in Docker, not on Neon.** The pooler, scale-to-zero
   behaviour and any storage-layer difference are untested; a Neon-only bug still
   reaches production (ADR 0009).

@@ -51,8 +51,14 @@ status mapping, cross-user isolation) with `currentUserId` mocked.
 `0001_tidy_makkari`) with all conversion in `src/lib/weight.ts`, called from
 components only. The database is still kilograms everywhere.
 
-Still missing: **components are untested** and Playwright is chosen but not
-installed. Sets cannot be reordered (exercise entries can).
+**End-to-end tests exist**: three Playwright journeys in `e2e/` — sign up and
+log a workout, correct a set and switch to pounds, and one user's log staying
+away from another. They run a real server on port 3100 pointed at the Docker
+database, and are the only place Auth.js itself is exercised.
+
+Still missing: **no component-level test runner** (no jsdom, no Testing
+Library), so components off those three paths are verified by hand. Sets cannot
+be reordered (exercise entries can).
 
 ## Commands
 
@@ -63,6 +69,7 @@ installed. Sets cannot be reordered (exercise entries can).
 | `npm run lint` | ESLint. |
 | `npm test` | Vitest, once. Starts the Docker test database first via `pretest`. |
 | `npm run test:watch` | Vitest in watch mode. Expects the container to be up already. |
+| `npm run test:e2e` | Playwright. Starts its own `next dev` on port 3100 against the test database. Needs `npx playwright install chromium` once. |
 | `npm run test:db:down` | Stop and remove the test database container. |
 | `npx tsc --noEmit` | Types only, without building. On a fresh clone this fails with `Cannot find name 'LayoutProps'` until `npx next typegen` has run once — Next generates the route types. |
 | `npx next typegen` | Regenerate the route/layout types under `.next/types`. |

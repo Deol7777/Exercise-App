@@ -21,6 +21,7 @@ process.env.DATABASE_URL ??=
 export default defineConfig({
   test: {
     environment: "node",
+    /** `src/**` only: the Playwright specs in e2e/ are a different runner. */
     include: ["src/**/*.test.ts"],
     globalSetup: ["src/test/global-setup.ts"],
     setupFiles: ["src/test/setup.ts"],
