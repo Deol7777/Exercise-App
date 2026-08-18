@@ -10,18 +10,24 @@ back as progress over time. Multi-user from the first commit.
 
 ## Current state
 
-Scaffolded and connected to a live database. Next.js 16 (App Router, React 19,
-Tailwind 4) with shadcn/ui components in `src/components/ui/`. The full schema
-— Auth.js tables plus `exercises`, `workout_sessions`, `session_exercises`,
-`sets` — is migrated onto a Neon project (`exercise-app`, aws-us-west-2), and
-the global exercise catalog is seeded.
+Next.js 16 (App Router, React 19, Tailwind 4) with shadcn/ui components in
+`src/components/ui/`. Note `--src-dir`: the App Router lives at `src/app/**`,
+not `app/**`.
 
-Note `--src-dir`: the App Router lives at `src/app/**`, not `app/**`, and
-[docs/architecture.md](docs/architecture.md) has not caught up with that yet.
+The full schema — Auth.js tables plus `exercises`, `workout_sessions`,
+`session_exercises`, `sets` — is migrated onto a Neon project (`exercise-app`,
+aws-us-west-2), and the global exercise catalog is seeded (60 rows).
 
-Still missing: authentication, every route handler, every domain service, and
-all tests. The first slice is authentication plus the session → exercise entry
-→ set write path.
+**The authentication slice is built**: email/password registration and sign-in
+on Auth.js v5 with a `jwt` session strategy, `POST /api/users`, the Auth.js
+catch-all at `/api/auth/[...nextauth]`, `/sign-in`, `/sign-up`, and the
+error-to-status mapping in `src/app/api/_lib/respond.ts`. `currentUserId()` in
+`src/server/auth.ts` is how server code asks who is acting.
+
+Still missing: **everything to do with training data** — no workout session,
+exercise entry or set service, query or handler exists. And **no tests**: no
+runner is installed. The next slice is the workout session → exercise entry →
+set write path.
 
 ## Commands
 
@@ -30,7 +36,8 @@ all tests. The first slice is authentication plus the session → exercise entry
 | `npm run dev` | Development server. Turbopack is the default bundler in Next 16 — there is no flag. |
 | `npm run build` | Production build, including a TypeScript pass. |
 | `npm run lint` | ESLint. |
-| `npx tsc --noEmit` | Types only, without building. |
+| `npx tsc --noEmit` | Types only, without building. On a fresh clone this fails with `Cannot find name 'LayoutProps'` until `npx next typegen` has run once — Next generates the route types. |
+| `npx next typegen` | Regenerate the route/layout types under `.next/types`. |
 | `npm run db:generate` | Write a new SQL migration from schema changes. Commit what it produces. |
 | `npm run db:migrate` | Apply pending migrations. Uses the **direct** URL. |
 | `npm run db:seed` | Seed the global exercise catalog. Idempotent. |
@@ -54,7 +61,11 @@ same Neon database as everything else.
 | Database | PostgreSQL + Drizzle ORM (drizzle-kit migrations) |
 | Auth | Auth.js v5, users in our own Postgres |
 | Hosting | Vercel + Neon |
-| Also | Zod (request validation), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint + Prettier |
+| Also | Zod (request validation, installed), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint (installed) + Prettier |
+
+Chosen but **not yet installed**: TanStack Query, Vitest, Playwright, Prettier.
+Client components use plain `fetch` and `useState` until TanStack Query lands.
+The Postgres driver is `pg` (node-postgres), not `@neondatabase/serverless`.
 
 Biome was considered and deliberately not adopted.
 

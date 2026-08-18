@@ -7,10 +7,8 @@
 
 _Last reviewed: 2026-08-17_
 
-> **Status: designed, not yet built.** No application code exists in this
-> repository. Everything below is the agreed target shape. Sections marked
-> _(planned)_ describe intent; update them to plain description as the code
-> lands, and delete this banner once the first slice ships.
+> Sections marked _(planned)_ are the agreed target shape and have no code
+> behind them yet. Everything else describes what is in the repository.
 
 ## One-paragraph summary
 
@@ -24,15 +22,37 @@ that **every row of training data is owned by a user, and the owning user id is
 always taken from the server-side session — never from the request**. That rule,
 not the framework choices, is what the layering exists to protect.
 
+## What exists today
+
+The authentication slice is built and running against the live database;
+nothing of the training path is.
+
+| Area | State |
+| --- | --- |
+| Schema | All eight tables migrated (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). One migration, `0000_rapid_the_fury`. |
+| Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. |
+| Auth | Email/password sign-in, registration, sign-out. Auth.js v5, `jwt` session strategy. `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
+| Route handlers | `POST /api/users` (register) and the Auth.js catch-all at `/api/auth/[...nextauth]`. Nothing else. |
+| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`. |
+| Domain services | `src/server/services/users.ts` only. |
+| Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
+| Tests | None. No runner is installed. |
+
+The next slice is the workout session → exercise entry → set write path: its
+services, its handlers and its UI.
+
 ## Components
 
 | Component | Lives in | Responsibility | Talks to |
 | --- | --- | --- | --- |
-| Web UI | `app/**`, `components/**` | Render pages; capture set-by-set input fast enough to use between sets | REST API (via TanStack Query), domain services (server components only) |
-| REST API | `app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
+| Web UI | `src/app/**`, `src/components/**` | Render pages; capture set-by-set input fast enough to use between sets | REST API (`fetch` today, TanStack Query _(planned)_), domain services (server components only) |
+| REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
-| Auth | `src/server/auth.ts`, `app/api/auth/**` | Sign-in, sessions, the `users` table | PostgreSQL |
+| Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
+
+The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
+with `--src-dir`.
 
 ## System shape
 
@@ -47,6 +67,19 @@ graph TD
     Svc --> DAL[Drizzle data access]
     DAL --> DB
 ```
+
+### Database access
+
+`src/server/db/index.ts` is the only place a connection is opened. It uses
+`pg` (node-postgres) through `drizzle-orm/node-postgres` against the **pooled**
+Neon string — not `@neondatabase/serverless`, because the same handle has to
+serve server components, route handlers and the drizzle-kit seed script. The
+pool is capped at 10, handed to `attachDatabasePool` from `@vercel/functions`
+so Fluid compute drains it before suspend, and cached on `globalThis` in
+development so Next's module re-evaluation does not leak a pool per edit.
+
+drizzle-kit is the exception: `drizzle.config.ts` reads `.env.local` itself and
+connects with the **direct** URL, because migrations need a real session.
 
 ## Boundaries and rules
 
@@ -69,7 +102,7 @@ These are the lines that are expensive to uncross:
 - **Weight is kilograms in the database, always.** Conversion to and from a
   user's display unit happens at the edges — never in a service, never in a
   query.
-- **One UI kit.** shadcn/ui components are copied into `components/ui/` and
+- **One UI kit.** shadcn/ui components are copied into `src/components/ui/` and
   edited in place. A second component library does not get added to solve a
   one-component problem.
 
@@ -115,7 +148,7 @@ record per exercise, and weekly volume by muscle group.
 | | Local | Preview | Production |
 | --- | --- | --- | --- |
 | App | `next dev` | Vercel preview per branch | Vercel production |
-| Database | Postgres in Docker, or a personal Neon branch | Neon branch per preview | Neon primary |
+| Database | The same Neon database as everything else — there is no local Postgres and no Docker | Neon branch per preview _(planned)_ | Neon primary |
 
 Configuration comes from environment variables (`.env.local` locally, project
 settings on Vercel). Two database URLs are always set and never derived from
@@ -124,8 +157,21 @@ drizzle-kit migrations.
 
 ## Known rough edges
 
-- **Nothing is built yet.** The repository contains documentation only. The
-  first slice is auth plus the session→exercise→set write path.
+- **`next dev` writes files into the tree.** It regenerates `AGENTS.md` and the
+  route types under `.next/types`. On a fresh clone `npx tsc --noEmit` fails
+  with `Cannot find name 'LayoutProps'` until `npx next typegen` (or a dev
+  server, or a build) has run once.
+- **Development shares the production database.** With no local Postgres, a
+  careless `npm run db:push` or a destructive query in Drizzle Studio hits real
+  data. Per-developer Neon branches are the intended fix and are not set up.
+- **Nothing is tested.** Vitest and Playwright are chosen but not installed, so
+  the auth path — including the timing-equalised credential check in
+  `verifyCredentials` — is verified by hand or not at all.
+- **`src/app/layout.tsx` still carries the scaffold metadata.** Title and
+  description read "Create Next App".
+- **Auth.js `authorize` collapses every failure into `null`.** Deliberate, so
+  accounts cannot be enumerated, but it also means a genuine database outage
+  during sign-in is indistinguishable from a wrong password.
 - **Restore has never been tested.** Neon's automated backups are the whole
   recovery story and remain unverified. Test a restore before the log holds
   history worth losing.
