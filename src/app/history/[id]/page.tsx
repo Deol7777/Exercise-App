@@ -4,9 +4,11 @@ import { notFound, redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
+import { formatVolume, fromKilograms } from "@/lib/weight";
 import { currentUserId } from "@/server/auth";
 import { isDomainError } from "@/server/errors";
 import { getWorkoutSession, type WorkoutSessionDetail } from "@/server/services/training";
+import { getWeightUnit } from "@/server/services/users";
 
 /**
  * One workout session, read-only. A session belonging to somebody else throws
@@ -22,6 +24,7 @@ export default async function WorkoutSessionPage({
   if (!userId) redirect("/sign-in");
 
   const { id } = await params;
+  const unit = await getWeightUnit(userId);
 
   let session: WorkoutSessionDetail;
   try {
@@ -53,7 +56,7 @@ export default async function WorkoutSessionPage({
       <Card>
         <CardHeader>
           <CardTitle>
-            {volume.toLocaleString()} kg · {workingSets.length} working sets
+            {formatVolume(volume, unit)} · {workingSets.length} working sets
           </CardTitle>
           <CardDescription>
             Started{" "}
@@ -86,7 +89,7 @@ export default async function WorkoutSessionPage({
               {entry.sets.map((set) => (
                 <li key={set.id}>
                   <span className="text-muted-foreground mr-2">{set.position}</span>
-                  {set.reps} × {set.weight} kg
+                  {set.reps} × {fromKilograms(set.weight, unit)} {unit}
                   {set.isWarmup ? (
                     <span className="text-muted-foreground ml-2 text-xs">warm-up</span>
                   ) : null}

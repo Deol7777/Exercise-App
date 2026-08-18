@@ -31,6 +31,7 @@ import {
 import { POST as postSet } from "./exercise-entries/[id]/sets/route";
 import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
 import { GET as getRecords } from "./progress/personal-records/route";
+import { GET as getMe, PATCH as patchMe } from "./users/me/route";
 
 const signedInAs = (userId: string | null) =>
   vi.mocked(currentUserId).mockResolvedValue(userId);
@@ -281,6 +282,32 @@ describe("one user's id in another user's path", () => {
     const detail = (await check.json()) as { notes: string | null; exercises: { sets: unknown[] }[] };
     expect(detail.notes).toBeNull();
     expect(detail.exercises[0].sets).toHaveLength(1);
+  });
+});
+
+describe("the account endpoint", () => {
+  it("reads and changes the display unit", async () => {
+    signedInAs(await createUser());
+
+    const before = await getMe();
+    expect(await before.json()).toEqual({ weightUnit: "kg" });
+
+    const changed = await patchMe(json("/api/users/me", "PATCH", { weightUnit: "lb" }));
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toEqual({ weightUnit: "lb" });
+
+    const after = await getMe();
+    expect(await after.json()).toEqual({ weightUnit: "lb" });
+  });
+
+  it("answers 401 without a session and 422 for a unit that does not exist", async () => {
+    signedInAs(null);
+    expect((await getMe()).status).toBe(401);
+    expect((await patchMe(json("/api/users/me", "PATCH", { weightUnit: "lb" }))).status).toBe(401);
+
+    signedInAs(await createUser());
+    const bad = await patchMe(json("/api/users/me", "PATCH", { weightUnit: "stone" }));
+    expect(bad.status).toBe(422);
   });
 });
 

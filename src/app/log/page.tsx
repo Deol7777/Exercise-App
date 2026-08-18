@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types/training";
 import { currentUserId } from "@/server/auth";
 import { listExercises } from "@/server/services/exercises";
+import { getWeightUnit } from "@/server/services/users";
 import {
   getActiveWorkoutSession,
   getWorkoutSession,
@@ -31,10 +32,11 @@ export default async function LogPage() {
   if (!userId) redirect("/sign-in");
 
   const active = await getActiveWorkoutSession(userId);
-  const [detail, catalog, recent] = await Promise.all([
+  const [detail, catalog, recent, unit] = await Promise.all([
     active ? getWorkoutSession(userId, active.id) : Promise.resolve(null),
     listExercises(userId),
     listWorkoutSessionsFor(userId, { limit: 5 }),
+    getWeightUnit(userId),
   ]);
 
   return (
@@ -55,6 +57,7 @@ export default async function LogPage() {
         session={detail && toWireSession(detail)}
         catalog={catalog satisfies ExerciseSummary[]}
         recent={recent.map(toWireSummary)}
+        unit={unit}
       />
     </main>
   );

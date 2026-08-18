@@ -4,6 +4,8 @@
  */
 import { eq, sql } from "drizzle-orm";
 
+import type { WeightUnit } from "@/lib/weight";
+
 import { db } from "..";
 import { users } from "../schema";
 
@@ -43,6 +45,29 @@ export async function insertUser(input: {
     .returning({ id: users.id, email: users.email, name: users.name });
 
   return row;
+}
+
+export async function findWeightUnit(userId: string): Promise<WeightUnit | null> {
+  const [row] = await db
+    .select({ weightUnit: users.weightUnit })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return row?.weightUnit ?? null;
+}
+
+export async function updateWeightUnit(
+  userId: string,
+  weightUnit: WeightUnit,
+): Promise<WeightUnit | null> {
+  const [row] = await db
+    .update(users)
+    .set({ weightUnit })
+    .where(eq(users.id, userId))
+    .returning({ weightUnit: users.weightUnit });
+
+  return row?.weightUnit ?? null;
 }
 
 export async function userExists(userId: string): Promise<boolean> {

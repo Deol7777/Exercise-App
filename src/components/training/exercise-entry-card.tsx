@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
 import type { LastPerformanceView, LoggedExerciseEntry, LoggedSet } from "@/lib/types/training";
+import { formatVolume, fromKilograms, toKilograms, type WeightUnit } from "@/lib/weight";
 import { addSetSchema, updateSetSchema } from "@/lib/validation/training";
 
 /**
@@ -21,11 +22,14 @@ import { addSetSchema, updateSetSchema } from "@/lib/validation/training";
 export function ExerciseEntryCard({
   entry,
   workoutSessionId,
+  unit,
   onChanged,
   onMoveUp,
   onMoveDown,
 }: {
   entry: LoggedExerciseEntry;
+  /** Display unit. Everything below is kilograms until it is rendered. */
+  unit: WeightUnit;
   /** Excluded from "last time", so it means the previous session, not this one. */
   workoutSessionId: string;
   onChanged: () => void;
@@ -61,7 +65,9 @@ export function ExerciseEntryCard({
 
   const lastSet = entry.sets.at(-1);
   const [reps, setReps] = useState(String(lastSet?.reps ?? 8));
-  const [weight, setWeight] = useState(String(lastSet?.weight ?? 20));
+  const [weight, setWeight] = useState(
+    String(lastSet ? fromKilograms(lastSet.weight, unit) : unit === "kg" ? 20 : 45),
+  );
   const [isWarmup, setIsWarmup] = useState(false);
 
   async function onAddSet(event: FormEvent<HTMLFormElement>) {
@@ -69,9 +75,10 @@ export function ExerciseEntryCard({
     setError(null);
 
     /** The same schema the handler runs; this pass only saves a round trip. */
+    /** The edge: what was typed is converted to kilograms once, here. */
     const parsed = addSetSchema.safeParse({
       reps: Number(reps),
-      weight: Number(weight),
+      weight: toKilograms(Number(weight), unit),
       isWarmup,
     });
 
@@ -157,7 +164,11 @@ export function ExerciseEntryCard({
           <p className="text-muted-foreground text-xs tabular-nums">
             Last time (
             {new Date(lastTime.startedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
-            ): {lastTime.sets.map((set) => `${set.reps} × ${set.weight}`).join(", ")} kg
+            ):{" "}
+            {lastTime.sets
+              .map((set) => `${set.reps} × ${fromKilograms(set.weight, unit)}`)
+              .join(", ")}{" "}
+            {unit}
           </p>
         ) : null}
 
@@ -167,6 +178,7 @@ export function ExerciseEntryCard({
               <SetRow
                 key={set.id}
                 set={set}
+                unit={unit}
                 onDelete={() => onDeleteSet(set.id)}
                 onSaved={onChanged}
                 onError={setError}
@@ -189,7 +201,7 @@ export function ExerciseEntryCard({
             />
           </Field>
           <Field className="w-28">
-            <FieldLabel htmlFor={`weight-${entry.id}`}>Weight (kg)</FieldLabel>
+            <FieldLabel htmlFor={`weight-${entry.id}`}>Weight ({unit})</FieldLabel>
             <Input
               id={`weight-${entry.id}`}
               inputMode="decimal"
@@ -218,7 +230,7 @@ export function ExerciseEntryCard({
           {/* Warm-up sets are stored but never counted — see docs/glossary.md. */}
           <span>
             {workingSets.length} working {workingSets.length === 1 ? "set" : "sets"} ·{" "}
-            {volume.toLocaleString()} kg volume
+            {formatVolume(volume, unit)} volume
           </span>
           <Button type="button" variant="ghost" size="sm" onClick={onRemoveEntry}>
             Remove exercise
@@ -236,25 +248,30 @@ export function ExerciseEntryCard({
  */
 function SetRow({
   set,
+  unit,
   onDelete,
   onSaved,
   onError,
 }: {
   set: LoggedSet;
+  unit: WeightUnit;
   onDelete: () => void;
   onSaved: () => void;
   onError: (message: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [reps, setReps] = useState(String(set.reps));
-  const [weight, setWeight] = useState(String(set.weight));
+  const [weight, setWeight] = useState(String(fromKilograms(set.weight, unit)));
   const [saving, setSaving] = useState(false);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onError(null);
 
-    const parsed = updateSetSchema.safeParse({ reps: Number(reps), weight: Number(weight) });
+    const parsed = updateSetSchema.safeParse({
+      reps: Number(reps),
+      weight: toKilograms(Number(weight), unit),
+    });
     if (!parsed.success) {
       onError(parsed.error.issues[0]?.message ?? "Check the set.");
       return;
@@ -294,7 +311,7 @@ function SetRow({
             onChange={(event) => setWeight(event.target.value)}
             aria-label={`Weight for set ${set.position}`}
           />
-          <span className="text-muted-foreground text-xs">kg</span>
+          <span className="text-muted-foreground text-xs">{unit}</span>
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </Button>
@@ -304,7 +321,7 @@ function SetRow({
             variant="ghost"
             onClick={() => {
               setReps(String(set.reps));
-              setWeight(String(set.weight));
+              setWeight(String(fromKilograms(set.weight, unit)));
               setEditing(false);
             }}
           >
@@ -319,7 +336,7 @@ function SetRow({
     <li className="flex items-center justify-between gap-2 tabular-nums">
       <span>
         <span className="text-muted-foreground mr-2">{set.position}</span>
-        {set.reps} × {set.weight} kg
+        {set.reps} × {fromKilograms(set.weight, unit)} {unit}
         {set.isWarmup ? <span className="text-muted-foreground ml-2 text-xs">warm-up</span> : null}
       </span>
       <span className="flex gap-1">

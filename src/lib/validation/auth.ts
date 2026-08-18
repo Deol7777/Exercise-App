@@ -4,6 +4,8 @@
  */
 import { z } from "zod";
 
+import { WEIGHT_UNITS } from "../weight";
+
 /**
  * bcrypt silently truncates anything past 72 bytes, so a longer password would
  * quietly not be fully checked. Reject it at the edge instead.
@@ -29,5 +31,11 @@ export const registerSchema = z.object({
   name: z.string().trim().max(120).optional(),
 });
 
+/** The signed-in user's own settings. The id is never in the body — it is the session's. */
+export const updateAccountSchema = z.object({
+  weightUnit: z.enum(WEIGHT_UNITS),
+});
+
+export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type SignInInput = z.infer<typeof signInSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;

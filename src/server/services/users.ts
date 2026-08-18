@@ -6,9 +6,11 @@
  */
 import { compare, hash } from "bcryptjs";
 
-import { findUserByEmail, insertUser } from "../db/queries/users";
+import type { WeightUnit } from "@/lib/weight";
+
+import { findUserByEmail, findWeightUnit, insertUser, updateWeightUnit } from "../db/queries/users";
 import { isUniqueViolation } from "../db/pg-errors";
-import { ConflictError } from "../errors";
+import { ConflictError, NotFoundError } from "../errors";
 
 /**
  * 12 rounds: comfortably above the 10 that has been the default for a decade,
@@ -74,4 +76,20 @@ export async function verifyCredentials(input: {
   if (!matches) return null;
 
   return { id: user.id, email: user.email, name: user.name };
+}
+
+/**
+ * The user's display unit. Kilograms is the default and the stored unit, so a
+ * missing preference is not an error — but a missing *user* is.
+ */
+export async function getWeightUnit(userId: string): Promise<WeightUnit> {
+  const unit = await findWeightUnit(userId);
+  if (!unit) throw new NotFoundError("That account does not exist.");
+  return unit;
+}
+
+export async function setWeightUnit(userId: string, weightUnit: WeightUnit): Promise<WeightUnit> {
+  const updated = await updateWeightUnit(userId, weightUnit);
+  if (!updated) throw new NotFoundError("That account does not exist.");
+  return updated;
 }

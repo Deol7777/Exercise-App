@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
+import { formatVolume, fromKilograms } from "@/lib/weight";
 import { currentUserId } from "@/server/auth";
 import { DEFAULT_WEEKS, getPersonalRecords, getWeeklyVolume } from "@/server/services/progress";
+import { getWeightUnit } from "@/server/services/users";
 
 /**
  * Progress: the heaviest working set per exercise, and how much work each
@@ -16,9 +18,10 @@ export default async function ProgressPage() {
   const userId = await currentUserId();
   if (!userId) redirect("/sign-in");
 
-  const [records, volume] = await Promise.all([
+  const [records, volume, unit] = await Promise.all([
     getPersonalRecords(userId),
     getWeeklyVolume(userId, DEFAULT_WEEKS),
+    getWeightUnit(userId),
   ]);
 
   /** One row per (week, muscle group) arrives; the page wants it grouped by week. */
@@ -68,7 +71,7 @@ export default async function ProgressPage() {
                       Week of {week.toLocaleDateString(undefined, { dateStyle: "medium" })}
                     </span>
                     <span className="text-muted-foreground tabular-nums">
-                      {Math.round(total).toLocaleString()} kg
+                      {formatVolume(total, unit)}
                     </span>
                   </div>
                   {/* Bars are shares of the heaviest week, so weeks are comparable to each other. */}
@@ -82,7 +85,7 @@ export default async function ProgressPage() {
                     {points.map((point) => (
                       <li key={point.muscleGroup}>
                         {MUSCLE_GROUP_LABELS[point.muscleGroup]}{" "}
-                        {Math.round(point.volume).toLocaleString()} kg · {point.setCount} sets
+                        {formatVolume(point.volume, unit)} · {point.setCount} sets
                       </li>
                     ))}
                   </ul>
@@ -107,7 +110,7 @@ export default async function ProgressPage() {
                 <li key={record.exerciseId} className="flex items-baseline justify-between gap-4">
                   <span>{record.exerciseName}</span>
                   <span className="tabular-nums">
-                    {record.weight} kg × {record.reps}
+                    {fromKilograms(record.weight, unit)} {unit} × {record.reps}
                     <span className="text-muted-foreground ml-2 text-xs">
                       {record.achievedAt.toLocaleDateString(undefined, { dateStyle: "medium" })}
                     </span>

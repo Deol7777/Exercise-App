@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS, MUSCLE_GROUPS } from "@/lib/muscle-groups";
+import type { WeightUnit } from "@/lib/weight";
 import type {
   ExerciseSummary,
   LoggedWorkoutSession,
@@ -36,10 +37,12 @@ export function WorkoutLogger({
   session,
   catalog,
   recent,
+  unit,
 }: {
   session: LoggedWorkoutSession | null;
   catalog: ExerciseSummary[];
   recent: WorkoutSessionListItem[];
+  unit: WeightUnit;
 }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
@@ -199,6 +202,7 @@ export function WorkoutLogger({
           key={entry.id}
           entry={entry}
           workoutSessionId={session.id}
+          unit={unit}
           onChanged={refresh}
           onMoveUp={index === 0 ? undefined : () => onMove(entry.id, -1)}
           onMoveDown={

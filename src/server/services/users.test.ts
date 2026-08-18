@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { registerUser, verifyCredentials } from "./users";
+import { getWeightUnit, registerUser, setWeightUnit, verifyCredentials } from "./users";
 
 const password = "correct-horse-battery";
 
@@ -69,5 +69,29 @@ describe("verifyCredentials", () => {
 
     expect(await verifyCredentials({ email: "someone@example.test", password: "wrong" })).toBeNull();
     expect(await verifyCredentials({ email: "nobody@example.test", password })).toBeNull();
+  });
+});
+
+describe("the display unit", () => {
+  it("is kilograms until it is changed", async () => {
+    const user = await registerUser({ email: "units@example.test", password });
+
+    expect(await getWeightUnit(user.id)).toBe("kg");
+  });
+
+  it("changes, and stays changed", async () => {
+    const user = await registerUser({ email: "pounds@example.test", password });
+
+    expect(await setWeightUnit(user.id, "lb")).toBe("lb");
+    expect(await getWeightUnit(user.id)).toBe("lb");
+  });
+
+  it("is not_found for an account that does not exist", async () => {
+    await expect(getWeightUnit("00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(
+      setWeightUnit("00000000-0000-4000-8000-000000000000", "lb"),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });

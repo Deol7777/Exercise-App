@@ -8,7 +8,16 @@
  * JWT sessions. It is kept so that adding an OAuth provider later is a
  * configuration change and not a migration.
  */
-import { integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgEnum, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+
+import { WEIGHT_UNITS } from "../../../lib/weight";
+
+/**
+ * A *display* preference and nothing more. Every weight in this database is
+ * kilograms; this decides what the user is shown and what their input is
+ * converted from.
+ */
+export const weightUnit = pgEnum("weight_unit", WEIGHT_UNITS);
 
 export const users = pgTable("users", {
   id: text("id")
@@ -23,6 +32,7 @@ export const users = pgTable("users", {
    * through an OAuth provider later will never have one.
    */
   passwordHash: text("password_hash"),
+  weightUnit: weightUnit("weight_unit").notNull().default("kg"),
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
 });
 

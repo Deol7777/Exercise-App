@@ -29,7 +29,7 @@ built and running against the live database.
 
 | Area | State |
 | --- | --- |
-| Schema | All eight tables migrated (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). One migration, `0000_rapid_the_fury`. |
+| Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
 | Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out. Auth.js v5, `jwt` session strategy. `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
@@ -37,13 +37,14 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 59 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 72 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
 | Method and path | Does |
 | --- | --- |
 | `POST /api/users` | Register. The only route reachable without a session. |
+| `GET`/`PATCH /api/users/me` | The signed-in user's own settings — currently the display unit. No route takes a user id in its path. |
 | `/api/auth/[...nextauth]` | Auth.js: sign in, sign out, session. |
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
 | `POST /api/exercises` | Create a custom exercise, private to the caller. |
@@ -137,9 +138,10 @@ These are the lines that are expensive to uncross:
   file.
 - **Every request body is parsed by a Zod schema at the handler edge.** Handlers
   work with the parsed output, never with raw JSON.
-- **Weight is kilograms in the database, always.** Conversion to and from a
-  user's display unit happens at the edges — never in a service, never in a
-  query.
+- **Weight is kilograms in the database, always.** `users.weight_unit` is a
+  *display* preference. Conversion lives in `src/lib/weight.ts` and is called
+  from components only — never in a service, never in a query, and never on the
+  way into the request schema's `weight` field, which is already kilograms.
 - **Order is assigned by the database, never sent by the client.** A new
   exercise entry or set goes on the end: `position` is `max(position) + 1`,
   computed inside the insert statement in `src/server/db/queries/training.ts`.
@@ -246,6 +248,10 @@ drizzle-kit migrations.
   renumber what follows, so a UI that prints the number shows 1, 2, 4. A reorder
   closes the gaps for exercise entries as a side effect; sets have no reorder,
   so their gaps stay.
+- **Editing a set in pounds can shift it by 10 g.** Display rounds to one
+  decimal place, so 62.5 kg shows as 137.8 lb, and saving that back stores
+  62.51 kg. Re-saving an untouched set is therefore not always a no-op for a
+  user in pounds. Storing the entered unit alongside the value would fix it.
 - **A stale client can silently undo a reorder.** The order is sent whole and
   the last write wins; nothing versions a session (ADR 0010).
 - **Two simultaneous writes to the same entry can collide.** `position` is

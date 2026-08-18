@@ -1,13 +1,16 @@
 import Link from "next/link";
 
+import { WeightUnitSelect } from "@/components/account/weight-unit-select";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/server/auth";
+import { getWeightUnit } from "@/server/services/users";
 
 /** A server component may read the session directly; it must not query the database inline. */
 export default async function HomePage() {
   const session = await auth();
+  const unit = session?.user?.id ? await getWeightUnit(session.user.id) : null;
 
   return (
     <main className="flex min-h-svh items-center justify-center p-6">
@@ -29,6 +32,12 @@ export default async function HomePage() {
                 <dt className="text-muted-foreground mt-2">User id</dt>
                 <dd className="font-mono text-xs">{session.user.id}</dd>
               </dl>
+              {unit ? (
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground text-sm">Display weights in</span>
+                  <WeightUnitSelect unit={unit} />
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button asChild>
                   <Link href="/log">Open the log</Link>
