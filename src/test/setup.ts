@@ -16,4 +16,5 @@ beforeEach(async () => {
   await db.execute(sql`delete from workout_sessions`);
   await db.execute(sql`delete from exercises where owner_id is not null`);
   await db.execute(sql`delete from users`);
+  await db.execute(sql`delete from sign_in_attempts`);
 });

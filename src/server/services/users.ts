@@ -9,6 +9,12 @@ import { compare, hash } from "bcryptjs";
 import type { WeightUnit } from "@/lib/weight";
 
 import {
+  clearFailures,
+  countRecentFailures,
+  deleteFailuresBefore,
+  recordFailure,
+} from "../db/queries/sign-in-attempts";
+import {
   deleteAccount as deleteAccountRows,
   findUserByEmail,
   findWeightUnit,
@@ -21,8 +27,14 @@ import { ConflictError, NotFoundError } from "../errors";
 /**
  * 12 rounds: comfortably above the 10 that has been the default for a decade,
  * and still well under the latency budget of a sign-in.
+ *
+ * Under `NODE_ENV=test` it drops to 4. The throttle tests make twenty-odd
+ * credential checks each, and at cost 12 that is half a minute of deliberate
+ * key stretching per file. The override is keyed on the test environment
+ * specifically — not on a tunable env var — so there is no configuration a
+ * deployment could get wrong.
  */
-const BCRYPT_COST = 12;
+const BCRYPT_COST = process.env.NODE_ENV === "test" ? 4 : 12;
 
 export type PublicUser = { id: string; email: string; name: string | null };
 
@@ -59,14 +71,37 @@ export async function registerUser(input: {
 }
 
 /**
+ * How fast a password can be guessed at, per email address.
+ *
+ * Ten wrong answers inside fifteen minutes and that address stops being
+ * checked until the window rolls forward. It is per address, so a real user
+ * locked out by somebody else's guessing waits fifteen minutes rather than
+ * losing the account.
+ */
+const MAX_FAILURES = 10;
+const WINDOW_MS = 15 * 60 * 1000;
+
+/**
  * Returns the user when the password matches, and null in every failure case —
- * unknown email and wrong password are deliberately indistinguishable to the
- * caller, so neither can be used to enumerate accounts.
+ * unknown email, wrong password and throttled are deliberately
+ * indistinguishable to the caller, so none of them can be used to enumerate
+ * accounts or to discover that an address is being attacked.
  */
 export async function verifyCredentials(input: {
   email: string;
   password: string;
 }): Promise<PublicUser | null> {
+  const windowStart = new Date(Date.now() - WINDOW_MS);
+
+  /** No scheduler in this app: expired rows are swept on the next attempt. */
+  await deleteFailuresBefore(windowStart);
+
+  if ((await countRecentFailures(input.email, windowStart)) >= MAX_FAILURES) {
+    /** Hash anyway, so a throttled answer is not measurably faster than a wrong one. */
+    await hash(input.password, BCRYPT_COST);
+    return null;
+  }
+
   const user = await findUserByEmail(input.email);
 
   if (!user?.passwordHash) {
@@ -75,11 +110,17 @@ export async function verifyCredentials(input: {
      * measurably faster than a wrong password, which leaks which emails exist.
      */
     await hash(input.password, BCRYPT_COST);
+    await recordFailure(input.email);
     return null;
   }
 
   const matches = await compare(input.password, user.passwordHash);
-  if (!matches) return null;
+  if (!matches) {
+    await recordFailure(input.email);
+    return null;
+  }
+
+  await clearFailures(input.email);
 
   return { id: user.id, email: user.email, name: user.name };
 }

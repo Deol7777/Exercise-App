@@ -31,13 +31,13 @@ built and running against the live database.
 | --- | --- |
 | Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
 | Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
-| Auth | Email/password sign-in, registration, sign-out. Auth.js v5, `jwt` session strategy. `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
+| Auth | Email/password sign-in, registration, sign-out, account deletion. Auth.js v5, `jwt` session strategy. Sign-in is throttled to ten failures per email per fifteen minutes (ADR 0015). `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
 | Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/history`, `/history/[id]`, `/progress`. |
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 78 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 85 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -274,7 +274,17 @@ drizzle-kit migrations.
   a 500. It takes two devices logging the same exercise at the same instant.
 - **Auth.js `authorize` collapses every failure into `null`.** Deliberate, so
   accounts cannot be enumerated, but it also means a genuine database outage
-  during sign-in is indistinguishable from a wrong password.
+  during sign-in is indistinguishable from a wrong password — and now so is a
+  throttled attempt.
+- **The sign-in throttle is per email, not per IP.** Guessing one account is
+  bounded; one guess each against a thousand addresses is not slowed at all
+  (ADR 0015). It also means somebody else can pause your sign-in for fifteen
+  minutes by guessing at your address.
+- **Password reset and breach response still do not exist.** ADR 0007 named
+  three obligations that come with owning passwords; ADR 0015 closes one.
+- **`BCRYPT_COST` is 4 under `NODE_ENV=test`.** Keyed on the test environment
+  rather than a tunable variable, so a deployment cannot inherit it — but a test
+  that measures hashing time is measuring the wrong thing.
 - **Restore has never been tested.** Neon's automated backups are the whole
   recovery story and remain unverified. Test a restore before the log holds
   history worth losing.

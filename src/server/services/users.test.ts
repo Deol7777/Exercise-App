@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { db } from "../db";
-import { exercises, sets, workoutSessions } from "../db/schema";
+import { exercises, sets, signInAttempts, workoutSessions } from "../db/schema";
 import { createCustomExercise } from "./exercises";
 import { addExerciseEntry, logSet, startWorkoutSession } from "./training";
 import {
@@ -104,6 +104,94 @@ describe("the display unit", () => {
     await expect(
       setWeightUnit("00000000-0000-4000-8000-000000000000", "lb"),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("the sign-in throttle", () => {
+  const wrong = { password: "wrong-password-entirely" };
+
+  /** Ten failures inside the window is the limit; the eleventh is refused outright. */
+  async function failTimes(email: string, times: number) {
+    for (let attempt = 0; attempt < times; attempt += 1) {
+      expect(await verifyCredentials({ email, ...wrong })).toBeNull();
+    }
+  }
+
+  it("stops checking the password after ten wrong answers", async () => {
+    const email = "throttled@example.test";
+    await registerUser({ email, password });
+
+    await failTimes(email, 10);
+
+    /** The right password now, and it still does not sign in. */
+    expect(await verifyCredentials({ email, password })).toBeNull();
+  });
+
+  it("still works at nine", async () => {
+    const email = "nearly@example.test";
+    await registerUser({ email, password });
+
+    await failTimes(email, 9);
+
+    expect(await verifyCredentials({ email, password })).not.toBeNull();
+  });
+
+  it("forgets the streak once the password is right", async () => {
+    const email = "recovered@example.test";
+    await registerUser({ email, password });
+
+    await failTimes(email, 9);
+    expect(await verifyCredentials({ email, password })).not.toBeNull();
+
+    /** The counter reset, so nine more are available rather than one. */
+    await failTimes(email, 9);
+    expect(await verifyCredentials({ email, password })).not.toBeNull();
+  });
+
+  it("counts attempts against an address with no account", async () => {
+    const email = "nobody-here@example.test";
+
+    await failTimes(email, 10);
+
+    /** Registering now does not hand the attacker a fresh allowance. */
+    await registerUser({ email, password });
+    expect(await verifyCredentials({ email, password })).toBeNull();
+  });
+
+  it("throttles one address without touching another", async () => {
+    const locked = "locked@example.test";
+    const fine = "fine@example.test";
+    await registerUser({ email: locked, password });
+    await registerUser({ email: fine, password });
+
+    await failTimes(locked, 10);
+
+    expect(await verifyCredentials({ email: locked, password })).toBeNull();
+    expect(await verifyCredentials({ email: fine, password })).not.toBeNull();
+  });
+
+  it("counts case-insensitively, like every other email match", async () => {
+    const email = "MixedCase@example.test";
+    await registerUser({ email, password });
+
+    await failTimes(email.toLowerCase(), 10);
+
+    expect(await verifyCredentials({ email: email.toUpperCase(), password })).toBeNull();
+  });
+
+  it("lets attempts outside the window fall off", async () => {
+    const email = "expired@example.test";
+    await registerUser({ email, password });
+    await failTimes(email, 10);
+    expect(await verifyCredentials({ email, password })).toBeNull();
+
+    /** Backdate the streak past the fifteen-minute window. */
+    await db
+      .update(signInAttempts)
+      .set({ attemptedAt: new Date(Date.now() - 20 * 60 * 1000) })
+      .where(eq(signInAttempts.emailKey, email.toLowerCase()));
+
+    expect(await verifyCredentials({ email, password })).not.toBeNull();
   });
 });
 

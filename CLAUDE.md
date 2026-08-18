@@ -67,6 +67,12 @@ in `src/lib/queries.ts`, and logging, editing, deleting a set and reordering are
 optimistic. An unsaved row renders "saving…" with its controls disabled — an
 end-to-end test that asserts on the DOM alone will pass before the write lands.
 
+**Sign-in is throttled**: ten failed checks per email per fifteen minutes,
+counted in `sign_in_attempts` (migration `0002_grey_gargoyle`) and enforced
+inside `verifyCredentials`, so every caller gets it. Throttled, wrong password
+and unknown address are deliberately indistinguishable. `BCRYPT_COST` is 4 under
+`NODE_ENV=test` and 12 everywhere else.
+
 Still missing: **no component-level test runner** (no jsdom, no Testing
 Library), so components off those three paths are verified by hand. Sets cannot
 be reordered (exercise entries can).
