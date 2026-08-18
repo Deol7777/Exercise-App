@@ -96,3 +96,7 @@ Mermaid participants to six or fewer *components*, not files; preserve
 human-written `Gotchas` when updating in place; document what the code *does*,
 not what it should do — if the code contradicts architecture.md, say so rather
 than papering over it.
+
+# Next.js writes and re-adds AGENTS.md on `next dev`; it points at the
+# Next 16 docs vendored in `node_modules/next/dist/docs/`.
+@AGENTS.md
