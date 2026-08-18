@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import type { WeightUnit } from "@/lib/weight";
 
 import { db } from "..";
-import { users } from "../schema";
+import { exercises, users, workoutSessions } from "../schema";
 
 /** Email is stored as given but matched case-insensitively; addresses are not case-sensitive in practice. */
 const emailMatches = (email: string) => sql`lower(${users.email}) = lower(${email})`;
@@ -68,6 +68,37 @@ export async function updateWeightUnit(
     .returning({ weightUnit: users.weightUnit });
 
   return row?.weightUnit ?? null;
+}
+
+/**
+ * Removes an account and everything hanging off it, in one transaction.
+ *
+ * The order is forced by the foreign keys and is the whole reason this is not a
+ * single `delete from users`: `exercises.owner_id` cascades from `users`, but
+ * `session_exercises.exercise_id` is `restrict`, so deleting a user who ever
+ * logged one of their own custom exercises would try to remove a catalog row
+ * that history still references, and Postgres refuses. Training data first,
+ * then the custom exercises nothing points at any more, then the user.
+ *
+ * Sets and exercise entries need no statement of their own — they cascade from
+ * `workout_sessions`.
+ */
+export async function deleteAccount(userId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) return false;
+
+    await tx.delete(workoutSessions).where(eq(workoutSessions.userId, userId));
+    await tx.delete(exercises).where(eq(exercises.ownerId, userId));
+    await tx.delete(users).where(eq(users.id, userId));
+
+    return true;
+  });
 }
 
 export async function userExists(userId: string): Promise<boolean> {

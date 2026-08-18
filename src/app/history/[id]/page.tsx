@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
 import { formatVolume, fromKilograms } from "@/lib/weight";
-import { currentUserId } from "@/server/auth";
+import { requireAccount } from "@/app/_lib/require-account";
 import { isDomainError } from "@/server/errors";
 import { getWorkoutSession, type WorkoutSessionDetail } from "@/server/services/training";
-import { getWeightUnit } from "@/server/services/users";
 
 /**
  * One workout session, read-only. A session belonging to somebody else throws
@@ -20,11 +19,8 @@ export default async function WorkoutSessionPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const userId = await currentUserId();
-  if (!userId) redirect("/sign-in");
-
+  const { userId, unit } = await requireAccount();
   const { id } = await params;
-  const unit = await getWeightUnit(userId);
 
   let session: WorkoutSessionDetail;
   try {

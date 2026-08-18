@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 
 import { updateAccountSchema } from "@/lib/validation/auth";
 import { currentUserId } from "@/server/auth";
-import { getWeightUnit, setWeightUnit } from "@/server/services/users";
+import { deleteAccount, getWeightUnit, setWeightUnit } from "@/server/services/users";
 
 import { fromError, invalidBody, unauthenticated } from "../../_lib/respond";
 
@@ -32,6 +32,26 @@ export async function PATCH(request: Request) {
 
   try {
     return NextResponse.json({ weightUnit: await setWeightUnit(userId, parsed.data.weightUnit) });
+  } catch (error) {
+    return fromError(error);
+  }
+}
+
+/**
+ * Deletes the account and everything in it. Irreversible, and scoped to the
+ * session — there is no way to spell somebody else's account here.
+ *
+ * The auth session outlives this by design: the JWT stays valid until it
+ * expires (ADR 0007), so the client signs out immediately afterwards. A request
+ * made with that token in between finds no user and gets a 404.
+ */
+export async function DELETE() {
+  const userId = await currentUserId();
+  if (!userId) return unauthenticated();
+
+  try {
+    await deleteAccount(userId);
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
     return fromError(error);
   }

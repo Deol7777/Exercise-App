@@ -1,16 +1,23 @@
 import Link from "next/link";
 
+import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
 import { WeightUnitSelect } from "@/components/account/weight-unit-select";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/server/auth";
+import { isDomainError } from "@/server/errors";
 import { getWeightUnit } from "@/server/services/users";
 
 /** A server component may read the session directly; it must not query the database inline. */
 export default async function HomePage() {
   const session = await auth();
-  const unit = session?.user?.id ? await getWeightUnit(session.user.id) : null;
+  /**
+   * A JWT can outlive its account (ADR 0007), so a missing user is a signed-out
+   * landing page here, not an error.
+   */
+  const unit = session?.user?.id ? await weightUnitOrNull(session.user.id) : null;
+  const signedIn = Boolean(session?.user && unit);
 
   return (
     <main className="flex min-h-svh items-center justify-center p-6">
@@ -18,13 +25,13 @@ export default async function HomePage() {
         <CardHeader>
           <CardTitle>Exercise App</CardTitle>
           <CardDescription>
-            {session?.user
+            {signedIn
               ? "Signed in. Start a workout, or pick up the one in progress."
               : "A workout logger. Sign in to record a session."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {session?.user ? (
+          {signedIn && session?.user ? (
             <>
               <dl className="text-sm">
                 <dt className="text-muted-foreground">Signed in as</dt>
@@ -50,6 +57,7 @@ export default async function HomePage() {
                 </Button>
                 <SignOutButton />
               </div>
+              {session.user.email ? <DeleteAccountDialog email={session.user.email} /> : null}
             </>
           ) : (
             <div className="flex gap-2">
@@ -65,4 +73,13 @@ export default async function HomePage() {
       </Card>
     </main>
   );
+}
+
+async function weightUnitOrNull(userId: string) {
+  try {
+    return await getWeightUnit(userId);
+  } catch (error) {
+    if (isDomainError(error) && error.code === "not_found") return null;
+    throw error;
+  }
 }

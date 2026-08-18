@@ -137,3 +137,69 @@ test("keeps one user's log away from another", async ({ page, context }) => {
   await page.goto(url);
   await expect(page.getByText("No workout in progress")).toBeVisible();
 });
+
+test("deletes an account, and everything in it", async ({ page }) => {
+  const email = account();
+  await signUp(page, email);
+
+  await page.getByRole("link", { name: "Open the log" }).click();
+  await page.getByRole("button", { name: "Start workout" }).click();
+  await page.getByLabel("Add an exercise").click();
+  await page.getByRole("option", { name: "Deadlift", exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Log set" }).click();
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Delete account" }).click();
+  await expect(page.getByRole("button", { name: "Delete everything" })).toBeDisabled();
+
+  /** The confirmation is typing the address; anything else leaves it disabled. */
+  await page.getByLabel(`Type ${email} to confirm`).fill("something else");
+  await expect(page.getByRole("button", { name: "Delete everything" })).toBeDisabled();
+
+  await page.getByLabel(`Type ${email} to confirm`).fill(email);
+  await page.getByRole("button", { name: "Delete everything" }).click();
+
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  /** The account is gone, so the old password no longer signs anyone in. */
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("That email and password do not match an account.")).toBeVisible();
+
+  const pool = new Pool({ connectionString: TEST_DATABASE_URL });
+  try {
+    const { rows } = await pool.query("select id from users where email = $1", [email]);
+    expect(rows).toHaveLength(0);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("a session that outlives its account lands on sign-in, not an error", async ({ page }) => {
+  const email = account();
+  await signUp(page, email);
+
+  /**
+   * Delete through the API while keeping the cookie: exactly what another
+   * device holding the same JWT would have after the account is deleted
+   * elsewhere. Sessions are JWTs, so nothing invalidates it (ADR 0007).
+   */
+  const deleted = await page.request.delete("/api/users/me");
+  expect(deleted.status()).toBe(204);
+
+  await page.goto("/log");
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  await page.goto("/progress");
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  await page.goto("/history");
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  /** The landing page renders as signed out rather than failing. */
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByText("Signed in as")).toBeHidden();
+});

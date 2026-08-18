@@ -31,7 +31,7 @@ import {
 import { POST as postSet } from "./exercise-entries/[id]/sets/route";
 import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
 import { GET as getRecords } from "./progress/personal-records/route";
-import { GET as getMe, PATCH as patchMe } from "./users/me/route";
+import { DELETE as deleteMe, GET as getMe, PATCH as patchMe } from "./users/me/route";
 
 const signedInAs = (userId: string | null) =>
   vi.mocked(currentUserId).mockResolvedValue(userId);
@@ -308,6 +308,30 @@ describe("the account endpoint", () => {
     signedInAs(await createUser());
     const bad = await patchMe(json("/api/users/me", "PATCH", { weightUnit: "stone" }));
     expect(bad.status).toBe(422);
+  });
+});
+
+describe("deleting an account over HTTP", () => {
+  it("answers 204, and the account is gone", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    /** Something to take with it. */
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    expect(started.status).toBe(201);
+
+    const deleted = await deleteMe();
+    expect(deleted.status).toBe(204);
+    expect(await deleted.text()).toBe("");
+
+    /** The JWT outlives the row, so a request with it now finds nothing. */
+    expect((await getMe()).status).toBe(404);
+    expect((await deleteMe()).status).toBe(404);
+  });
+
+  it("answers 401 without a session", async () => {
+    signedInAs(null);
+    expect((await deleteMe()).status).toBe(401);
   });
 });
 

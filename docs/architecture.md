@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 72 tests, plus 3 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 77 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -45,6 +45,7 @@ built and running against the live database.
 | --- | --- |
 | `POST /api/users` | Register. The only route reachable without a session. |
 | `GET`/`PATCH /api/users/me` | The signed-in user's own settings — currently the display unit. No route takes a user id in its path. |
+| `DELETE /api/users/me` | Delete the account and everything in it. Irreversible, one transaction. |
 | `/api/auth/[...nextauth]` | Auth.js: sign in, sign out, session. |
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
 | `POST /api/exercises` | Create a custom exercise, private to the caller. |
@@ -75,7 +76,7 @@ already visible.
 
 | Component | Lives in | Responsibility | Talks to |
 | --- | --- | --- | --- |
-| Web UI | `src/app/**`, `src/components/**` | Render pages; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts`, domain services (server components only) |
+| Web UI | `src/app/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts`, domain services (server components only) |
 | API client | `src/lib/api.ts` | The browser's side of the REST contract: one `apiFetch`, which throws `ApiError` carrying the handler's `{ error, fields }`. No caching — TanStack Query _(planned)_ goes here | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
@@ -241,11 +242,13 @@ drizzle-kit migrations.
   reproduced in eleven runs since, including on a freshly created database. The
   output was not captured. The concurrent-registration test is the only
   non-deterministic one and is the first place to look if it recurs.
-- **Deleting a user fails if they logged a custom exercise.** `exercises`
-  cascades from `users`, but `session_exercises.exercise_id` is `restrict` — so
-  removing the account tries to remove a catalog row that history still
-  references, and Postgres refuses. Account deletion needs to delete the
-  training data first, and there is no code that does.
+- **Account deletion cannot be undone.** It is a hard delete in one transaction
+  (ADR 0013), and Neon's untested backups are the only route back.
+- **A JWT can name an account that no longer exists.** Sessions are not
+  revocable (ADR 0007), so after a deletion the token stays valid until it
+  expires. `requireAccount()` in `src/app/_lib/` and the landing page treat that
+  as signed out; anything new that reads the session must do the same, or it
+  will 500 in exactly that state.
 - **A set is written per request, and the screen refetches the whole page.**
   Every mutation is a `fetch` followed by `router.refresh()`; there is no client
   cache and no optimistic update, so a set logged on a slow connection shows a

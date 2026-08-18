@@ -1,13 +1,11 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
 import { formatVolume, fromKilograms } from "@/lib/weight";
-import { currentUserId } from "@/server/auth";
+import { requireAccount } from "@/app/_lib/require-account";
 import { DEFAULT_WEEKS, getPersonalRecords, getWeeklyVolume } from "@/server/services/progress";
-import { getWeightUnit } from "@/server/services/users";
 
 /**
  * Progress: the heaviest working set per exercise, and how much work each
@@ -15,13 +13,11 @@ import { getWeightUnit } from "@/server/services/users";
  * server component may call one, but never queries the database itself.
  */
 export default async function ProgressPage() {
-  const userId = await currentUserId();
-  if (!userId) redirect("/sign-in");
+  const { userId, unit } = await requireAccount();
 
-  const [records, volume, unit] = await Promise.all([
+  const [records, volume] = await Promise.all([
     getPersonalRecords(userId),
     getWeeklyVolume(userId, DEFAULT_WEEKS),
-    getWeightUnit(userId),
   ]);
 
   /** One row per (week, muscle group) arrives; the page wants it grouped by week. */

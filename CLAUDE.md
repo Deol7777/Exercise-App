@@ -56,6 +56,11 @@ log a workout, correct a set and switch to pounds, and one user's log staying
 away from another. They run a real server on port 3100 pointed at the Docker
 database, and are the only place Auth.js itself is exercised.
 
+**Accounts can be deleted**: `DELETE /api/users/me`, a hard delete in one
+transaction in foreign-key order (training data → custom exercises → user),
+confirmed by typing the email. Signed-in pages resolve the session through
+`src/app/_lib/require-account.ts`, because a JWT can outlive its account.
+
 Still missing: **no component-level test runner** (no jsdom, no Testing
 Library), so components off those three paths are verified by hand. Sets cannot
 be reordered (exercise entries can).

@@ -1,15 +1,13 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { currentUserId } from "@/server/auth";
+import { requireAccount } from "@/app/_lib/require-account";
 import { listWorkoutSessionsFor } from "@/server/services/training";
 
 /** The log read back: every workout session this user has recorded, newest first. */
 export default async function HistoryPage() {
-  const userId = await currentUserId();
-  if (!userId) redirect("/sign-in");
+  const { userId } = await requireAccount();
 
   const sessions = await listWorkoutSessionsFor(userId, { limit: 50 });
 

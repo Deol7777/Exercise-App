@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 
 import { WorkoutLogger } from "@/components/training/workout-logger";
@@ -8,9 +7,8 @@ import type {
   LoggedWorkoutSession,
   WorkoutSessionListItem,
 } from "@/lib/types/training";
-import { currentUserId } from "@/server/auth";
+import { requireAccount } from "@/app/_lib/require-account";
 import { listExercises } from "@/server/services/exercises";
-import { getWeightUnit } from "@/server/services/users";
 import {
   getActiveWorkoutSession,
   getWorkoutSession,
@@ -28,15 +26,13 @@ import {
  * handlers return — the client then has one shape to understand, not two.
  */
 export default async function LogPage() {
-  const userId = await currentUserId();
-  if (!userId) redirect("/sign-in");
+  const { userId, unit } = await requireAccount();
 
   const active = await getActiveWorkoutSession(userId);
-  const [detail, catalog, recent, unit] = await Promise.all([
+  const [detail, catalog, recent] = await Promise.all([
     active ? getWorkoutSession(userId, active.id) : Promise.resolve(null),
     listExercises(userId),
     listWorkoutSessionsFor(userId, { limit: 5 }),
-    getWeightUnit(userId),
   ]);
 
   return (

@@ -3,9 +3,20 @@
  * `verifyCredentials` is not asserted here — it is a property of the code path,
  * and a clock-based assertion would be flaky.
  */
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { getWeightUnit, registerUser, setWeightUnit, verifyCredentials } from "./users";
+import { db } from "../db";
+import { exercises, sets, workoutSessions } from "../db/schema";
+import { createCustomExercise } from "./exercises";
+import { addExerciseEntry, logSet, startWorkoutSession } from "./training";
+import {
+  deleteAccount,
+  getWeightUnit,
+  registerUser,
+  setWeightUnit,
+  verifyCredentials,
+} from "./users";
 
 const password = "correct-horse-battery";
 
@@ -93,5 +104,72 @@ describe("the display unit", () => {
     await expect(
       setWeightUnit("00000000-0000-4000-8000-000000000000", "lb"),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("deleting an account", () => {
+  it("takes the workouts, sets and custom exercises with it", async () => {
+    const user = await registerUser({ email: "leaving@example.test", password });
+
+    const custom = await createCustomExercise(user.id, {
+      name: "Zercher Squat",
+      muscleGroup: "quads",
+    });
+    const session = await startWorkoutSession(user.id);
+    const entry = await addExerciseEntry(user.id, session.id, { exerciseId: custom.id });
+    await logSet(user.id, entry.id, { reps: 5, weight: 100 });
+
+    await deleteAccount(user.id);
+
+    /**
+     * This is the case that used to fail outright: `exercises` cascades from
+     * `users`, but `session_exercises.exercise_id` is `restrict`, so a user who
+     * logged their own custom exercise could not be deleted at all.
+     */
+    const [{ count: sessionCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(workoutSessions)
+      .where(eq(workoutSessions.userId, user.id));
+    const [{ count: customCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(exercises)
+      .where(eq(exercises.ownerId, user.id));
+    const [{ count: setCount }] = await db.select({ count: sql<number>`count(*)::int` }).from(sets);
+
+    expect([sessionCount, customCount, setCount]).toEqual([0, 0, 0]);
+    expect(await verifyCredentials({ email: "leaving@example.test", password })).toBeNull();
+  });
+
+  it("leaves the global catalog and other users alone", async () => {
+    const leaving = await registerUser({ email: "gone@example.test", password });
+    const staying = await registerUser({ email: "staying@example.test", password });
+
+    await createCustomExercise(leaving.id, { name: "Zercher Squat", muscleGroup: "quads" });
+    const kept = await createCustomExercise(staying.id, {
+      name: "Jefferson Curl",
+      muscleGroup: "back",
+    });
+    const session = await startWorkoutSession(staying.id);
+
+    await deleteAccount(leaving.id);
+
+    const [{ count: globalCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(exercises)
+      .where(sql`${exercises.ownerId} is null`);
+
+    expect(globalCount).toBe(60);
+    expect(await getWeightUnit(staying.id)).toBe("kg");
+    expect((await db.select().from(exercises).where(eq(exercises.id, kept.id))).length).toBe(1);
+    expect(
+      (await db.select().from(workoutSessions).where(eq(workoutSessions.id, session.id))).length,
+    ).toBe(1);
+  });
+
+  it("is not_found the second time", async () => {
+    const user = await registerUser({ email: "twice@example.test", password });
+    await deleteAccount(user.id);
+
+    await expect(deleteAccount(user.id)).rejects.toMatchObject({ code: "not_found" });
   });
 });

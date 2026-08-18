@@ -8,7 +8,13 @@ import { compare, hash } from "bcryptjs";
 
 import type { WeightUnit } from "@/lib/weight";
 
-import { findUserByEmail, findWeightUnit, insertUser, updateWeightUnit } from "../db/queries/users";
+import {
+  deleteAccount as deleteAccountRows,
+  findUserByEmail,
+  findWeightUnit,
+  insertUser,
+  updateWeightUnit,
+} from "../db/queries/users";
 import { isUniqueViolation } from "../db/pg-errors";
 import { ConflictError, NotFoundError } from "../errors";
 
@@ -92,4 +98,13 @@ export async function setWeightUnit(userId: string, weightUnit: WeightUnit): Pro
   const updated = await updateWeightUnit(userId, weightUnit);
   if (!updated) throw new NotFoundError("That account does not exist.");
   return updated;
+}
+
+/**
+ * Deletes the account and all of its training data. There is no soft delete and
+ * no recovery window: the rows are gone when this returns (ADR 0013).
+ */
+export async function deleteAccount(userId: string): Promise<void> {
+  const deleted = await deleteAccountRows(userId);
+  if (!deleted) throw new NotFoundError("That account does not exist.");
 }
