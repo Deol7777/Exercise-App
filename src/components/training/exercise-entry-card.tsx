@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
 import type { LastPerformanceView, LoggedExerciseEntry, LoggedSet } from "@/lib/types/training";
-import { addSetSchema } from "@/lib/validation/training";
+import { addSetSchema, updateSetSchema } from "@/lib/validation/training";
 
 /**
  * One exercise entry and its sets, with the form that logs the next one.
@@ -137,24 +137,13 @@ export function ExerciseEntryCard({
         {entry.sets.length ? (
           <ol className="flex flex-col gap-1 text-sm">
             {entry.sets.map((set) => (
-              <li key={set.id} className="flex items-center justify-between gap-2 tabular-nums">
-                <span>
-                  <span className="text-muted-foreground mr-2">{set.position}</span>
-                  {set.reps} × {set.weight} kg
-                  {set.isWarmup ? (
-                    <span className="text-muted-foreground ml-2 text-xs">warm-up</span>
-                  ) : null}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDeleteSet(set.id)}
-                  aria-label={`Remove set ${set.position}`}
-                >
-                  Remove
-                </Button>
-              </li>
+              <SetRow
+                key={set.id}
+                set={set}
+                onDelete={() => onDeleteSet(set.id)}
+                onSaved={onChanged}
+                onError={setError}
+              />
             ))}
           </ol>
         ) : (
@@ -210,5 +199,122 @@ export function ExerciseEntryCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * One logged set: read-only until "Edit", then two inputs and a save. A typo in
+ * the weight is the thing this exists for — noticing it two sets later should
+ * not mean deleting and re-logging.
+ */
+function SetRow({
+  set,
+  onDelete,
+  onSaved,
+  onError,
+}: {
+  set: LoggedSet;
+  onDelete: () => void;
+  onSaved: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [reps, setReps] = useState(String(set.reps));
+  const [weight, setWeight] = useState(String(set.weight));
+  const [saving, setSaving] = useState(false);
+
+  async function onSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onError(null);
+
+    const parsed = updateSetSchema.safeParse({ reps: Number(reps), weight: Number(weight) });
+    if (!parsed.success) {
+      onError(parsed.error.issues[0]?.message ?? "Check the set.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await apiFetch<LoggedSet>(`/api/sets/${set.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(parsed.data),
+      });
+      setEditing(false);
+      onSaved();
+    } catch (caught) {
+      onError(caught instanceof ApiError ? caught.message : "Could not save that set.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <li>
+        <form onSubmit={onSave} className="flex flex-wrap items-center gap-2">
+          <Input
+            className="w-16"
+            inputMode="numeric"
+            value={reps}
+            onChange={(event) => setReps(event.target.value)}
+            aria-label={`Reps for set ${set.position}`}
+          />
+          <span className="text-muted-foreground">×</span>
+          <Input
+            className="w-20"
+            inputMode="decimal"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+            aria-label={`Weight for set ${set.position}`}
+          />
+          <span className="text-muted-foreground text-xs">kg</span>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setReps(String(set.reps));
+              setWeight(String(set.weight));
+              setEditing(false);
+            }}
+          >
+            Cancel
+          </Button>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center justify-between gap-2 tabular-nums">
+      <span>
+        <span className="text-muted-foreground mr-2">{set.position}</span>
+        {set.reps} × {set.weight} kg
+        {set.isWarmup ? <span className="text-muted-foreground ml-2 text-xs">warm-up</span> : null}
+      </span>
+      <span className="flex gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setEditing(true)}
+          aria-label={`Edit set ${set.position}`}
+        >
+          Edit
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          aria-label={`Remove set ${set.position}`}
+        >
+          Remove
+        </Button>
+      </span>
+    </li>
   );
 }

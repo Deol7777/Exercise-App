@@ -55,6 +55,14 @@ export const addSetSchema = z.object({
   isWarmup: z.boolean().optional(),
 });
 
+/**
+ * A partial edit of a logged set. Every field is optional, but sending none is
+ * a mistake rather than a no-op, so it is rejected.
+ */
+export const updateSetSchema = addSetSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "Send at least one field to change.");
+
 export const createExerciseSchema = z.object({
   name: z.string().trim().min(1, "Name the exercise.").max(120),
   muscleGroup: z.enum(MUSCLE_GROUPS, "Pick a muscle group."),
@@ -64,4 +72,5 @@ export type CreateWorkoutSessionInput = z.infer<typeof createWorkoutSessionSchem
 export type UpdateWorkoutSessionInput = z.infer<typeof updateWorkoutSessionSchema>;
 export type AddExerciseEntryInput = z.infer<typeof addExerciseEntrySchema>;
 export type AddSetInput = z.infer<typeof addSetSchema>;
+export type UpdateSetInput = z.infer<typeof updateSetSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;

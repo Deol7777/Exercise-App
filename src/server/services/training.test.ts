@@ -9,6 +9,7 @@ import { createUser, globalExercise } from "@/test/factories";
 import { DomainError } from "../errors";
 import {
   addExerciseEntry,
+  editSet,
   editWorkoutSession,
   finishWorkoutSession,
   getActiveWorkoutSession,
@@ -181,6 +182,53 @@ describe("weight", () => {
 
     const set = await logSet(userId, entry.id, { reps: 12, weight: 17.25 });
     expect(set.weight).toBe(17.25);
+  });
+});
+
+describe("editing a logged set", () => {
+  it("changes only the fields it is given, and keeps the position", async () => {
+    const userId = await createUser();
+    const session = await startWorkoutSession(userId);
+    const entry = await addExerciseEntry(userId, session.id, {
+      exerciseId: await globalExercise(userId, "Back Squat"),
+    });
+    await logSet(userId, entry.id, { reps: 5, weight: 100 });
+    const second = await logSet(userId, entry.id, { reps: 5, weight: 1000 });
+
+    const corrected = await editSet(userId, second.id, { weight: 100 });
+
+    expect(corrected).toMatchObject({ position: 2, reps: 5, weight: 100, isWarmup: false });
+    expect(typeof corrected.weight).toBe("number");
+  });
+
+  it("can reclassify a set as a warm-up, which removes it from volume", async () => {
+    const userId = await createUser();
+    const session = await startWorkoutSession(userId);
+    const entry = await addExerciseEntry(userId, session.id, {
+      exerciseId: await globalExercise(userId, "Barbell Bench Press"),
+    });
+    const set = await logSet(userId, entry.id, { reps: 10, weight: 20 });
+
+    const updated = await editSet(userId, set.id, { isWarmup: true });
+    expect(updated.isWarmup).toBe(true);
+
+    const detail = await getWorkoutSession(userId, session.id);
+    expect(detail.exercises[0].sets[0].isWarmup).toBe(true);
+  });
+
+  it("refuses another user's set", async () => {
+    const owner = await createUser();
+    const stranger = await createUser();
+    const session = await startWorkoutSession(owner);
+    const entry = await addExerciseEntry(owner, session.id, {
+      exerciseId: await globalExercise(owner, "Deadlift"),
+    });
+    const set = await logSet(owner, entry.id, { reps: 5, weight: 140 });
+
+    expect(await codeOf(() => editSet(stranger, set.id, { weight: 1 }))).toBe("not_found");
+
+    const detail = await getWorkoutSession(owner, session.id);
+    expect(detail.exercises[0].sets[0].weight).toBe(140);
   });
 });
 

@@ -246,6 +246,34 @@ export async function insertSet(input: {
   return { ...row, weight: toKilograms(row.weight) };
 }
 
+export async function updateSet(
+  userId: string,
+  setId: string,
+  patch: { reps?: number; weight?: number; isWarmup?: boolean },
+): Promise<SetRecord | null> {
+  const found = await findSet(userId, setId);
+  if (!found) return null;
+
+  const [row] = await db
+    .update(sets)
+    .set({
+      ...(patch.reps === undefined ? {} : { reps: patch.reps }),
+      /** numeric wants a string on the way in, the same as an insert. */
+      ...(patch.weight === undefined ? {} : { weight: patch.weight.toFixed(2) }),
+      ...(patch.isWarmup === undefined ? {} : { isWarmup: patch.isWarmup }),
+    })
+    .where(eq(sets.id, setId))
+    .returning({
+      id: sets.id,
+      position: sets.position,
+      reps: sets.reps,
+      weight: sets.weight,
+      isWarmup: sets.isWarmup,
+    });
+
+  return { ...row, weight: toKilograms(row.weight) };
+}
+
 export async function findSet(
   userId: string,
   setId: string,

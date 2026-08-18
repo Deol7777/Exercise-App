@@ -20,6 +20,7 @@ import {
   insertSet,
   insertWorkoutSession,
   listWorkoutSessions,
+  updateSet,
   updateWorkoutSession,
   type ExerciseEntryRecord,
   type SetRecord,
@@ -179,6 +180,21 @@ export async function logSet(
     weight: input.weight,
     isWarmup: input.isWarmup ?? false,
   });
+}
+
+/**
+ * Corrects a set that was logged wrong — the common case being a weight typed
+ * one digit out, noticed two sets later. `position` is not editable: order is
+ * the database's, and a set moves by being deleted and logged again.
+ */
+export async function editSet(
+  userId: string,
+  setId: string,
+  patch: { reps?: number; weight?: number; isWarmup?: boolean },
+): Promise<SetRecord> {
+  const updated = await updateSet(userId, setId, patch);
+  if (!updated) throw new NotFoundError("That set does not exist.");
+  return updated;
 }
 
 export async function removeSet(userId: string, setId: string): Promise<void> {

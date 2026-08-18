@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest, service-level, against a local Postgres in Docker. 38 tests over `training`, `progress`, `exercises` and `users`. Route handlers and components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 52 tests. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -55,6 +55,7 @@ built and running against the live database.
 | `POST /api/workout-sessions/[id]/exercises` | Add an exercise entry to the end of the session. |
 | `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
 | `POST /api/exercise-entries/[id]/sets` | Log a set. |
+| `PATCH /api/sets/[id]` | Correct a logged set's reps, weight or warm-up flag. `position` is not editable. |
 | `DELETE /api/sets/[id]` | Remove a set. |
 | `GET /api/exercises/[id]/last-performance` | The previous time this exercise was done. `?exclude=` leaves a session out — the logging screen excludes the one in progress. |
 | `GET /api/progress/personal-records` | The heaviest working set per exercise. |
@@ -79,7 +80,7 @@ already visible.
 | Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, weekly volume | PostgreSQL |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
-| Tests | `src/**/*.test.ts`, `src/test/**` | Service-level suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
+| Tests | `src/**/*.test.ts`, `src/test/**` | Service and handler suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
 
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
@@ -214,10 +215,12 @@ drizzle-kit migrations.
   converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
   milliseconds turned into a `Date`. A new aggregate that skips the cast returns
   a string that TypeScript will happily call a number.
-- **The HTTP edge and the UI are untested.** The suite covers domain services
-  and the SQL under them. Route handlers, Zod parsing at the edge and every
-  React component are still verified by hand. Playwright is chosen and not
-  installed.
+- **The UI is untested.** Handlers and services are covered; every React
+  component is still verified by hand, including the inline set editor.
+  Playwright is chosen and not installed.
+- **Handler tests mock the session, so Auth.js itself is never exercised.**
+  `currentUserId` is replaced wholesale, which is what makes the tests possible
+  and also means a break in the real JWT callback chain would not fail them.
 - **Tests run on Postgres 17 in Docker, not on Neon.** The pooler, scale-to-zero
   behaviour and any storage-layer difference are untested; a Neon-only bug still
   reaches production (ADR 0009).

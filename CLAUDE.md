@@ -43,11 +43,13 @@ exercise from the same endpoint.
 from `docker-compose.yml` on port **5433** — never Neon, and the suite refuses
 to start against a non-localhost `DATABASE_URL`. `src/test/global-setup.ts`
 migrates and seeds it; `src/test/setup.ts` empties the log before each test.
-Tests live next to what they test, as `src/server/services/*.test.ts`.
+Tests live next to what they test: `src/server/services/*.test.ts` for the
+domain rules, `src/app/api/routes.test.ts` for the HTTP contract (401/404/422,
+status mapping, cross-user isolation) with `currentUserId` mocked.
 
-Still missing: **route handlers, Zod edges and components are untested**, and
-Playwright is chosen but not installed. Editing a logged set, reordering
-exercises and a pounds display unit are the visible next features.
+Still missing: **components are untested** and Playwright is chosen but not
+installed. Reordering exercises and a pounds display unit are the visible next
+features.
 
 ## Commands
 

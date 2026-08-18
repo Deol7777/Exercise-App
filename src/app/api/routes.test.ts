@@ -1,0 +1,245 @@
+/**
+ * The HTTP edge. These tests call the route handlers directly with a `Request`,
+ * with `currentUserId` mocked — the one thing that cannot be exercised from a
+ * test process, and the one thing every handler's security rests on.
+ *
+ * What is being checked here is the contract the four steps produce:
+ * 401 without a session, 404 for a bad or foreign id, 422 for a body that fails
+ * its schema, and the right status on the way out. The domain rules underneath
+ * have their own tests in src/server/services/.
+ */
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createUser, globalExercise } from "@/test/factories";
+
+vi.mock("@/server/auth", () => ({ currentUserId: vi.fn() }));
+
+import { currentUserId } from "@/server/auth";
+
+import { GET as getExercises, POST as postExercise } from "./exercises/route";
+import { GET as getSessions, POST as postSession } from "./workout-sessions/route";
+import {
+  DELETE as deleteSession,
+  GET as getSession,
+  PATCH as patchSession,
+} from "./workout-sessions/[id]/route";
+import { POST as postEntry } from "./workout-sessions/[id]/exercises/route";
+import { POST as postSet } from "./exercise-entries/[id]/sets/route";
+import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
+import { GET as getRecords } from "./progress/personal-records/route";
+
+const signedInAs = (userId: string | null) =>
+  vi.mocked(currentUserId).mockResolvedValue(userId);
+
+const json = (url: string, method: string, body?: unknown) =>
+  new Request(`http://localhost${url}`, {
+    method,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+const context = (id: string) => ({ params: Promise.resolve({ id }) });
+
+const NOT_A_UUID = "not-a-uuid";
+const UNUSED_UUID = "00000000-0000-4000-8000-000000000000";
+
+beforeEach(() => {
+  vi.mocked(currentUserId).mockReset();
+});
+
+describe("without a session", () => {
+  it("answers 401 everywhere, and touches nothing", async () => {
+    signedInAs(null);
+
+    const responses = await Promise.all([
+      getExercises(new NextRequest("http://localhost/api/exercises")),
+      postExercise(json("/api/exercises", "POST", { name: "X", muscleGroup: "chest" })),
+      getSessions(new NextRequest("http://localhost/api/workout-sessions")),
+      postSession(json("/api/workout-sessions", "POST", {})),
+      getSession(json(`/api/workout-sessions/${UNUSED_UUID}`, "GET"), context(UNUSED_UUID)),
+      postSet(json(`/api/exercise-entries/${UNUSED_UUID}/sets`, "POST", { reps: 5, weight: 60 }), context(UNUSED_UUID)),
+      getRecords(),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401, 401]);
+    await expect(responses[0].json()).resolves.toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("path parameters", () => {
+  it("answers 404 for an id that is not a UUID, before any query", async () => {
+    signedInAs(await createUser());
+
+    const responses = await Promise.all([
+      getSession(json(`/api/workout-sessions/${NOT_A_UUID}`, "GET"), context(NOT_A_UUID)),
+      deleteSession(json(`/api/workout-sessions/${NOT_A_UUID}`, "DELETE"), context(NOT_A_UUID)),
+      postEntry(json(`/api/workout-sessions/${NOT_A_UUID}/exercises`, "POST", { exerciseId: UNUSED_UUID }), context(NOT_A_UUID)),
+      deleteSet(json(`/api/sets/${NOT_A_UUID}`, "DELETE"), context(NOT_A_UUID)),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404]);
+  });
+});
+
+describe("request bodies", () => {
+  it("answers 422 with field errors when the schema fails", async () => {
+    signedInAs(await createUser());
+
+    const response = await postExercise(
+      json("/api/exercises", "POST", { name: "", muscleGroup: "elbows" }),
+    );
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as { error: string; fields: Record<string, string[]> };
+    expect(Object.keys(body.fields).sort()).toEqual(["muscleGroup", "name"]);
+  });
+
+  it("answers 422 for a body that is not JSON at all", async () => {
+    signedInAs(await createUser());
+
+    const response = await postSet(
+      new Request(`http://localhost/api/exercise-entries/${UNUSED_UUID}/sets`, {
+        method: "POST",
+        body: "not json",
+      }),
+      context(UNUSED_UUID),
+    );
+
+    expect(response.status).toBe(422);
+  });
+
+  it("accepts an empty body when starting a workout session", async () => {
+    signedInAs(await createUser());
+
+    const response = await postSession(
+      new Request("http://localhost/api/workout-sessions", { method: "POST" }),
+    );
+
+    expect(response.status).toBe(201);
+  });
+});
+
+describe("the write path over HTTP", () => {
+  it("starts a session, adds an exercise, logs a set and corrects it", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    expect(started.status).toBe(201);
+    const session = (await started.json()) as { id: string };
+
+    const added = await postEntry(
+      json(`/api/workout-sessions/${session.id}/exercises`, "POST", {
+        exerciseId: await globalExercise(userId, "Deadlift"),
+      }),
+      context(session.id),
+    );
+    expect(added.status).toBe(201);
+    const entry = (await added.json()) as { id: string; position: number };
+    expect(entry.position).toBe(1);
+
+    const logged = await postSet(
+      json(`/api/exercise-entries/${entry.id}/sets`, "POST", { reps: 5, weight: 100 }),
+      context(entry.id),
+    );
+    expect(logged.status).toBe(201);
+    const set = (await logged.json()) as { id: string; weight: number };
+    expect(set.weight).toBe(100);
+
+    const corrected = await patchSet(
+      json(`/api/sets/${set.id}`, "PATCH", { weight: 102.5 }),
+      context(set.id),
+    );
+    expect(corrected.status).toBe(200);
+    expect(await corrected.json()).toMatchObject({ id: set.id, reps: 5, weight: 102.5 });
+  });
+
+  it("answers 409 for a second workout session", async () => {
+    signedInAs(await createUser());
+    await postSession(json("/api/workout-sessions", "POST", {}));
+
+    const second = await postSession(json("/api/workout-sessions", "POST", {}));
+    expect(second.status).toBe(409);
+  });
+
+  it("answers 204 with no body on delete", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    const session = (await started.json()) as { id: string };
+
+    const deleted = await deleteSession(
+      json(`/api/workout-sessions/${session.id}`, "DELETE"),
+      context(session.id),
+    );
+
+    expect(deleted.status).toBe(204);
+    expect(await deleted.text()).toBe("");
+  });
+});
+
+describe("one user's id in another user's path", () => {
+  it("is a 404, and changes nothing", async () => {
+    const owner = await createUser();
+    signedInAs(owner);
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    const session = (await started.json()) as { id: string };
+    const added = await postEntry(
+      json(`/api/workout-sessions/${session.id}/exercises`, "POST", {
+        exerciseId: await globalExercise(owner, "Deadlift"),
+      }),
+      context(session.id),
+    );
+    const entry = (await added.json()) as { id: string };
+    const logged = await postSet(
+      json(`/api/exercise-entries/${entry.id}/sets`, "POST", { reps: 5, weight: 100 }),
+      context(entry.id),
+    );
+    const set = (await logged.json()) as { id: string };
+
+    signedInAs(await createUser());
+
+    const responses = await Promise.all([
+      getSession(json(`/api/workout-sessions/${session.id}`, "GET"), context(session.id)),
+      patchSession(json(`/api/workout-sessions/${session.id}`, "PATCH", { notes: "mine now" }), context(session.id)),
+      deleteSession(json(`/api/workout-sessions/${session.id}`, "DELETE"), context(session.id)),
+      postSet(json(`/api/exercise-entries/${entry.id}/sets`, "POST", { reps: 1, weight: 1 }), context(entry.id)),
+      patchSet(json(`/api/sets/${set.id}`, "PATCH", { reps: 99 }), context(set.id)),
+      deleteSet(json(`/api/sets/${set.id}`, "DELETE"), context(set.id)),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404, 404, 404]);
+
+    signedInAs(owner);
+    const check = await getSession(json(`/api/workout-sessions/${session.id}`, "GET"), context(session.id));
+    const detail = (await check.json()) as { notes: string | null; exercises: { sets: unknown[] }[] };
+    expect(detail.notes).toBeNull();
+    expect(detail.exercises[0].sets).toHaveLength(1);
+  });
+});
+
+describe("the catalog over HTTP", () => {
+  it("returns the seeded exercises and filters by search", async () => {
+    signedInAs(await createUser());
+
+    const all = await getExercises(new NextRequest("http://localhost/api/exercises"));
+    expect(((await all.json()) as unknown[]).length).toBe(60);
+
+    const filtered = await getExercises(
+      new NextRequest("http://localhost/api/exercises?search=squat"),
+    );
+    const names = ((await filtered.json()) as { name: string }[]).map((row) => row.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.every((name) => /squat/i.test(name))).toBe(true);
+  });
+
+  it("answers 409 for a duplicate custom exercise name", async () => {
+    signedInAs(await createUser());
+    const body = { name: "Zercher Squat", muscleGroup: "quads" };
+
+    expect((await postExercise(json("/api/exercises", "POST", body))).status).toBe(201);
+    expect((await postExercise(json("/api/exercises", "POST", body))).status).toBe(409);
+  });
+});
