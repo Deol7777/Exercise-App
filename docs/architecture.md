@@ -1,16 +1,16 @@
 # Architecture
 
 > Describes the system **as it is today**. Rewrite sections in place when things
-> change — this file has no history. For *why* a choice was made, see
-> `docs/decisions/`. For step-by-step request paths, see `docs/flows/`.
+> change — this file has no history. The decision records that explain *why*, and
+> the per-path flow documents, are kept outside version control on the author's
+> machine; this file is written to stand on its own without them.
 
 _Last reviewed: 2026-08-17_
 
 > **Status: designed, not yet built.** No application code exists in this
-> repository. Everything below is the agreed target shape, settled in ADRs
-> 0002–0006. Sections marked _(planned)_ describe intent; update them to plain
-> description as the code lands, and delete this banner once the first slice
-> ships.
+> repository. Everything below is the agreed target shape. Sections marked
+> _(planned)_ describe intent; update them to plain description as the code
+> lands, and delete this banner once the first slice ships.
 
 ## One-paragraph summary
 
@@ -54,14 +54,13 @@ These are the lines that are expensive to uncross:
 
 - **The session is the only source of identity.** A handler or service takes the
   acting user id from the Auth.js session. Never from a body field, query
-  parameter or path segment — see [ADR 0005](decisions/0005-authjs-with-owned-user-table.md).
+  parameter or path segment.
 - **Route handlers contain no SQL and no business rules.** They authenticate,
   validate, delegate, and translate the result into a status code. Four steps,
   in that order.
 - **Domain services know nothing about HTTP.** No `Request`, no `Response`, no
   status codes. They throw typed domain errors; the handler maps them.
-- **No Server Actions.** REST route handlers are the only mutation surface —
-  see [ADR 0003](decisions/0003-rest-route-handlers-as-api.md).
+- **No Server Actions.** REST route handlers are the only mutation surface.
 - **Client components never import the database layer.** Anything under
   `src/server/**` is server-only and must stay unreachable from a `"use client"`
   file.

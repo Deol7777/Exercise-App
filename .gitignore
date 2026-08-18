@@ -51,3 +51,7 @@ desktop.ini
 
 # Certificates
 *.pem
+
+# Local-only project notes: kept on disk, deliberately out of version control
+docs/decisions/
+docs/flows/

@@ -10,25 +10,51 @@ back as progress over time. Multi-user from the first commit.
 
 ## Current state
 
-The stack is decided (ADRs 0002–0006) but **no application code exists yet** —
-no package manifest, no source tree, and no VCS (`git init` has not been run).
-There are therefore no build, lint or test commands to document; add a
-`## Commands` section here as soon as the project is scaffolded.
+Scaffolded and connected to a live database. Next.js 16 (App Router, React 19,
+Tailwind 4) with shadcn/ui components in `src/components/ui/`. The full schema
+— Auth.js tables plus `exercises`, `workout_sessions`, `session_exercises`,
+`sets` — is migrated onto a Neon project (`exercise-app`, aws-us-west-2), and
+the global exercise catalog is seeded.
 
-The first slice is authentication plus the session → exercise entry → set write
-path.
+Note `--src-dir`: the App Router lives at `src/app/**`, not `app/**`, and
+[docs/architecture.md](docs/architecture.md) has not caught up with that yet.
+
+Still missing: authentication, every route handler, every domain service, and
+all tests. The first slice is authentication plus the session → exercise entry
+→ set write path.
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `npm run dev` | Development server. Turbopack is the default bundler in Next 16 — there is no flag. |
+| `npm run build` | Production build, including a TypeScript pass. |
+| `npm run lint` | ESLint. |
+| `npx tsc --noEmit` | Types only, without building. |
+| `npm run db:generate` | Write a new SQL migration from schema changes. Commit what it produces. |
+| `npm run db:migrate` | Apply pending migrations. Uses the **direct** URL. |
+| `npm run db:seed` | Seed the global exercise catalog. Idempotent. |
+| `npm run db:studio` | Drizzle Studio against the current database. |
+| `npm run db:push` | Pushes schema with no migration file. Local throwaway branches only — never a shared environment. |
+
+Environment lives in `.env.local` (gitignored); `.env.example` names every key.
+`DATABASE_URL` is the pooled Neon string and `DATABASE_URL_UNPOOLED` the direct
+one — they are not interchangeable, and swapping them fails only under load.
+
+There is no local Postgres and no Docker: `npm run dev` reads and writes the
+same Neon database as everything else.
 
 ## Stack
 
-| Concern | Choice | ADR |
-| --- | --- | --- |
-| Framework | Next.js (App Router), TypeScript | [0002](docs/decisions/0002-nextjs-typescript-tailwind-shadcn.md) |
-| Styling / UI | Tailwind CSS, shadcn/ui + Radix | [0002](docs/decisions/0002-nextjs-typescript-tailwind-shadcn.md) |
-| API style | REST route handlers under `app/api/**` | [0003](docs/decisions/0003-rest-route-handlers-as-api.md) |
-| Database | PostgreSQL + Drizzle ORM (drizzle-kit migrations) | [0004](docs/decisions/0004-postgres-with-drizzle.md) |
-| Auth | Auth.js v5, users in our own Postgres | [0005](docs/decisions/0005-authjs-with-owned-user-table.md) |
-| Hosting | Vercel + Neon | [0006](docs/decisions/0006-vercel-and-neon.md) |
-| Also | Zod (request validation), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint + Prettier | |
+| Concern | Choice |
+| --- | --- |
+| Framework | Next.js (App Router), TypeScript |
+| Styling / UI | Tailwind CSS, shadcn/ui + Radix |
+| API style | REST route handlers under `app/api/**` |
+| Database | PostgreSQL + Drizzle ORM (drizzle-kit migrations) |
+| Auth | Auth.js v5, users in our own Postgres |
+| Hosting | Vercel + Neon |
+| Also | Zod (request validation), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint + Prettier |
 
 Biome was considered and deliberately not adopted.
 
@@ -62,26 +88,30 @@ performance of it inside a session.
 
 ## Documentation contract
 
-The docs directory is the project's memory, and the three parts do not overlap.
-Putting content in the wrong one is the main way this degrades:
+The docs directory is the project's memory, and the parts do not overlap.
+Putting content in the wrong one is the main way this degrades.
+
+**Committed to the repository:**
 
 - **[docs/architecture.md](docs/architecture.md)** — present tense, *what is*.
   Rewritten in place; carries no history. Its `Known rough edges` section is the
   highest-value part and the one most often left empty — keep it honest.
-- **[docs/decisions/](docs/decisions/)** — *why*, append-only. Never rewrite an
-  accepted ADR; supersede it with a new one and mark the old one
-  `Superseded by [ADR-XXXX](XXXX-title.md)`. Copy `0000-template.md` to start.
-  Write one when reversing the decision would be expensive — framework,
-  datastore, auth model, deployment target, a boundary in the code, or a
-  deliberate departure from convention. Read the existing ADRs before proposing
-  a change, so settled ground is not relitigated.
-- **[docs/flows/](docs/flows/)** — *how one path runs*, end to end. Named after
-  the journey (`log-a-workout.md`), never after the code
-  (`sessions-route.md`). None exist yet.
+- **[docs/glossary.md](docs/glossary.md)** — what words mean *here*. Check it
+  before naming things.
 
-Architecture.md currently carries a "designed, not yet built" banner and
-_(planned)_ markers. Convert those to plain description as code lands, and
-delete the banner once the first slice ships.
+**Local only, and deliberately never committed** — `.gitignore` excludes both,
+so they exist on the author's machine and nowhere else. Keep writing them; just
+never stage them, and never link to them from a committed file, because a clone
+will not have them:
+
+- **`docs/decisions/`** — *why*, append-only ADRs. Never rewrite an accepted
+  one; supersede it with a new one and mark the old one superseded. Copy
+  `0000-template.md` to start. Write one when reversing the decision would be
+  expensive — framework, datastore, auth model, deployment target, a boundary in
+  the code, or a deliberate departure from convention. Read the existing ADRs
+  before proposing a change, so settled ground is not relitigated.
+- **`docs/flows/`** — *how one path runs*, end to end. Named after the journey
+  (`log-a-workout.md`), never after the code (`sessions-route.md`).
 
 ### Writing flows
 
