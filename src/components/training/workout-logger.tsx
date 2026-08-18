@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 
 import { ExerciseEntryCard } from "@/components/training/exercise-entry-card";
 import { Button } from "@/components/ui/button";
@@ -18,23 +18,24 @@ import {
 } from "@/components/ui/select";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS, MUSCLE_GROUPS } from "@/lib/muscle-groups";
-import type { WeightUnit } from "@/lib/weight";
+import { queryKeys } from "@/lib/queries";
 import type {
   ExerciseSummary,
   LoggedWorkoutSession,
   WorkoutSessionListItem,
 } from "@/lib/types/training";
+import type { WeightUnit } from "@/lib/weight";
 
 /**
  * The logging screen.
  *
- * Server data arrives as props from src/app/log/page.tsx; every change is a
- * REST call followed by router.refresh(), which re-runs the server component
- * and hands this one the new state. There is no client cache to keep in step —
- * TanStack Query is the planned next step, not what this does today.
+ * The server component renders the first paint and passes its data in as
+ * `initialData`; everything after that runs through the query cache (ADR 0014).
+ * A mutation invalidates the two keys it can affect rather than refetching the
+ * page, so logging a set does not re-render history.
  */
 export function WorkoutLogger({
-  session,
+  session: initialSession,
   catalog,
   recent,
   unit,
@@ -44,47 +45,115 @@ export function WorkoutLogger({
   recent: WorkoutSessionListItem[];
   unit: WeightUnit;
 }) {
-  const router = useRouter();
-  const [refreshing, startRefresh] = useTransition();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [exerciseId, setExerciseId] = useState<string>("");
 
-  const refresh = () => startRefresh(() => router.refresh());
+  const { data: session } = useQuery({
+    queryKey: queryKeys.activeWorkoutSession,
+    queryFn: () =>
+      apiFetch<LoggedWorkoutSession | null>("/api/workout-sessions?active=true"),
+    initialData: initialSession,
+  });
 
-  async function run(work: () => Promise<unknown>, fallback: string) {
-    setError(null);
-    setPending(true);
-    try {
-      await work();
-      refresh();
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : fallback);
-    } finally {
-      setPending(false);
-    }
-  }
+  const { data: sessions } = useQuery({
+    queryKey: queryKeys.workoutSessions,
+    queryFn: () => apiFetch<WorkoutSessionListItem[]>("/api/workout-sessions?limit=5"),
+    initialData: recent,
+  });
 
-  const onStart = () =>
-    run(
+  const invalidateAll = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.activeWorkoutSession }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.workoutSessions }),
+    ]);
+
+  /** Shared shape for the mutations that simply refetch afterwards. */
+  const mutation = (request: () => Promise<unknown>, fallback: string) => ({
+    mutationFn: request,
+    onMutate: () => setError(null),
+    onSuccess: invalidateAll,
+    onError: (caught: unknown) =>
+      setError(caught instanceof ApiError ? caught.message : fallback),
+  });
+
+  const start = useMutation(
+    mutation(
       () => apiFetch("/api/workout-sessions", { method: "POST", body: JSON.stringify({}) }),
       "Could not start a workout session.",
-    );
+    ),
+  );
 
-  const onFinish = () =>
-    run(
+  const finish = useMutation(
+    mutation(
       () =>
         apiFetch(`/api/workout-sessions/${session?.id}`, {
           method: "PATCH",
           body: JSON.stringify({ endedAt: new Date().toISOString() }),
         }),
       "Could not finish the workout session.",
-    );
+    ),
+  );
+
+  const addExercise = useMutation({
+    ...mutation(
+      () =>
+        apiFetch(`/api/workout-sessions/${session?.id}/exercises`, {
+          method: "POST",
+          body: JSON.stringify({ exerciseId }),
+        }),
+      "Could not add that exercise.",
+    ),
+    onSuccess: async () => {
+      setExerciseId("");
+      await invalidateAll();
+    },
+  });
 
   /**
    * Moving one entry is expressed as the whole new running order, because that
    * is what the endpoint takes — the server derives positions 1..n from it.
    */
+  const reorder = useMutation({
+    mutationFn: (order: string[]) =>
+      apiFetch(`/api/workout-sessions/${session?.id}/exercises`, {
+        method: "PATCH",
+        body: JSON.stringify({ order }),
+      }),
+    /** Optimistic: the cards move under the thumb, not after a round trip. */
+    onMutate: async (order: string[]) => {
+      setError(null);
+      await queryClient.cancelQueries({ queryKey: queryKeys.activeWorkoutSession });
+
+      const previous = queryClient.getQueryData<LoggedWorkoutSession | null>(
+        queryKeys.activeWorkoutSession,
+      );
+
+      queryClient.setQueryData<LoggedWorkoutSession | null>(
+        queryKeys.activeWorkoutSession,
+        (current) =>
+          current
+            ? {
+                ...current,
+                exercises: order.flatMap((id, index) => {
+                  const entry = current.exercises.find((candidate) => candidate.id === id);
+                  return entry ? [{ ...entry, position: index + 1 }] : [];
+                }),
+              }
+            : current,
+      );
+
+      return { previous };
+    },
+    onError: (caught, _order, context) => {
+      queryClient.setQueryData(queryKeys.activeWorkoutSession, context?.previous);
+      setError(caught instanceof ApiError ? caught.message : "Could not reorder the exercises.");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.activeWorkoutSession }),
+  });
+
+  const busy = start.isPending || finish.isPending || addExercise.isPending;
+
   function onMove(entryId: string, direction: -1 | 1) {
     if (!session) return;
 
@@ -94,28 +163,12 @@ export function WorkoutLogger({
     if (from < 0 || to < 0 || to >= order.length) return;
 
     [order[from], order[to]] = [order[to], order[from]];
-
-    run(
-      () =>
-        apiFetch(`/api/workout-sessions/${session.id}/exercises`, {
-          method: "PATCH",
-          body: JSON.stringify({ order }),
-        }),
-      "Could not reorder the exercises.",
-    );
+    reorder.mutate(order);
   }
 
   function onAddExercise(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !exerciseId) return;
-
-    run(async () => {
-      await apiFetch(`/api/workout-sessions/${session.id}/exercises`, {
-        method: "POST",
-        body: JSON.stringify({ exerciseId }),
-      });
-      setExerciseId("");
-    }, "Could not add that exercise.");
+    if (session && exerciseId) addExercise.mutate();
   }
 
   /** Grouped so a 60-row catalog is scannable; the value sent is always the id. */
@@ -133,13 +186,13 @@ export function WorkoutLogger({
             <CardDescription>Start one, then add the exercises as you do them.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <Button onClick={onStart} disabled={pending || refreshing} className="w-fit">
-              {pending ? "Starting…" : "Start workout"}
+            <Button onClick={() => start.mutate()} disabled={busy} className="w-fit">
+              {start.isPending ? "Starting…" : "Start workout"}
             </Button>
             {error ? <FieldError>{error}</FieldError> : null}
           </CardContent>
         </Card>
-        <RecentSessions sessions={recent} />
+        <RecentSessions sessions={sessions} />
       </div>
     );
   }
@@ -180,14 +233,14 @@ export function WorkoutLogger({
                 </SelectContent>
               </Select>
             </Field>
-            <Button type="submit" disabled={!exerciseId || pending || refreshing}>
+            <Button type="submit" disabled={!exerciseId || busy}>
               Add
             </Button>
             <Button
               type="button"
               variant="outline"
-              onClick={onFinish}
-              disabled={pending || refreshing}
+              onClick={() => finish.mutate()}
+              disabled={busy}
               className="ml-auto"
             >
               Finish workout
@@ -203,7 +256,6 @@ export function WorkoutLogger({
           entry={entry}
           workoutSessionId={session.id}
           unit={unit}
-          onChanged={refresh}
           onMoveUp={index === 0 ? undefined : () => onMove(entry.id, -1)}
           onMoveDown={
             index === session.exercises.length - 1 ? undefined : () => onMove(entry.id, 1)
@@ -217,7 +269,7 @@ export function WorkoutLogger({
         </p>
       ) : null}
 
-      <RecentSessions sessions={recent} />
+      <RecentSessions sessions={sessions} />
     </div>
   );
 }

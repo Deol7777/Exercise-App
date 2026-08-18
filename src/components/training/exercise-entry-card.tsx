@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,60 +9,45 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
-import type { LastPerformanceView, LoggedExerciseEntry, LoggedSet } from "@/lib/types/training";
+import { queryKeys } from "@/lib/queries";
+import type {
+  LastPerformanceView,
+  LoggedExerciseEntry,
+  LoggedSet,
+  LoggedWorkoutSession,
+} from "@/lib/types/training";
 import { formatVolume, fromKilograms, toKilograms, type WeightUnit } from "@/lib/weight";
 import { addSetSchema, updateSetSchema } from "@/lib/validation/training";
+
+/** Marks a set that exists only in the cache so far. */
+const PENDING_PREFIX = "pending-";
 
 /**
  * One exercise entry and its sets, with the form that logs the next one.
  *
- * The form is the thing that has to be quick — it is used standing at a rack
- * between sets — so it prefills from the previous set of this entry, keeps
- * focus, and never navigates.
+ * Logging a set is the one interaction that has to feel instant — it happens
+ * standing at a rack, between sets, on gym wifi — so it is optimistic: the set
+ * appears in the cached session immediately and is rolled back if the request
+ * fails (ADR 0014).
  */
 export function ExerciseEntryCard({
   entry,
   workoutSessionId,
   unit,
-  onChanged,
   onMoveUp,
   onMoveDown,
 }: {
   entry: LoggedExerciseEntry;
-  /** Display unit. Everything below is kilograms until it is rendered. */
-  unit: WeightUnit;
   /** Excluded from "last time", so it means the previous session, not this one. */
   workoutSessionId: string;
-  onChanged: () => void;
+  /** Display unit. Everything below is kilograms until it is rendered. */
+  unit: WeightUnit;
   /** Undefined at the ends of the list, which is what disables the control. */
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  const [lastTime, setLastTime] = useState<LastPerformanceView | null>(null);
-
-  /**
-   * What this exercise was done for last time, fetched once per entry. It is a
-   * prompt, not state the screen depends on, so a failure is swallowed: the
-   * card still logs sets without it.
-   */
-  useEffect(() => {
-    let cancelled = false;
-
-    apiFetch<LastPerformanceView | null>(
-      `/api/exercises/${entry.exercise.id}/last-performance?exclude=${workoutSessionId}`,
-    )
-      .then((result) => {
-        if (!cancelled) setLastTime(result);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entry.exercise.id, workoutSessionId]);
 
   const lastSet = entry.sets.at(-1);
   const [reps, setReps] = useState(String(lastSet?.reps ?? 8));
@@ -70,12 +56,113 @@ export function ExerciseEntryCard({
   );
   const [isWarmup, setIsWarmup] = useState(false);
 
-  async function onAddSet(event: FormEvent<HTMLFormElement>) {
+  /**
+   * What this exercise was done for last time. A prompt, not state the screen
+   * depends on, so a failure is silent: the card still logs sets without it.
+   */
+  const { data: lastTime } = useQuery({
+    queryKey: ["last-performance", entry.exercise.id, workoutSessionId],
+    queryFn: () =>
+      apiFetch<LastPerformanceView | null>(
+        `/api/exercises/${entry.exercise.id}/last-performance?exclude=${workoutSessionId}`,
+      ),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  /** Rewrites this entry's sets inside the cached session, and hands back a rollback. */
+  function patchCachedSets(update: (sets: LoggedSet[]) => LoggedSet[]) {
+    const previous = queryClient.getQueryData<LoggedWorkoutSession | null>(
+      queryKeys.activeWorkoutSession,
+    );
+
+    queryClient.setQueryData<LoggedWorkoutSession | null>(
+      queryKeys.activeWorkoutSession,
+      (current) =>
+        current
+          ? {
+              ...current,
+              exercises: current.exercises.map((candidate) =>
+                candidate.id === entry.id ? { ...candidate, sets: update(candidate.sets) } : candidate,
+              ),
+            }
+          : current,
+    );
+
+    return previous;
+  }
+
+  const settle = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activeWorkoutSession });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workoutSessions });
+  };
+
+  const rollback = (previous: LoggedWorkoutSession | null | undefined, message: string) => {
+    queryClient.setQueryData(queryKeys.activeWorkoutSession, previous);
+    setError(message);
+  };
+
+  const logSet = useMutation({
+    mutationFn: (input: { reps: number; weight: number; isWarmup: boolean }) =>
+      apiFetch<LoggedSet>(`/api/exercise-entries/${entry.id}/sets`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    onMutate: async (input) => {
+      setError(null);
+      await queryClient.cancelQueries({ queryKey: queryKeys.activeWorkoutSession });
+
+      /**
+       * A placeholder id, replaced when the refetch brings the real row. The
+       * `pending-` prefix is what the row renders as "saving…": an optimistic
+       * set that looks identical to a saved one invites navigating away before
+       * the write lands.
+       */
+      const optimistic: LoggedSet = {
+        id: `${PENDING_PREFIX}${Date.now()}`,
+        position: (entry.sets.at(-1)?.position ?? 0) + 1,
+        ...input,
+      };
+
+      return { previous: patchCachedSets((sets) => [...sets, optimistic]) };
+    },
+    onSuccess: () => setIsWarmup(false),
+    onError: (caught, _input, context) =>
+      rollback(
+        context?.previous,
+        caught instanceof ApiError ? caught.message : "Could not log that set.",
+      ),
+    onSettled: settle,
+  });
+
+  const removeSet = useMutation({
+    mutationFn: (setId: string) => apiFetch(`/api/sets/${setId}`, { method: "DELETE" }),
+    onMutate: async (setId: string) => {
+      setError(null);
+      await queryClient.cancelQueries({ queryKey: queryKeys.activeWorkoutSession });
+      return { previous: patchCachedSets((sets) => sets.filter((set) => set.id !== setId)) };
+    },
+    onError: (caught, _setId, context) =>
+      rollback(
+        context?.previous,
+        caught instanceof ApiError ? caught.message : "Could not remove that set.",
+      ),
+    onSettled: settle,
+  });
+
+  const removeEntry = useMutation({
+    mutationFn: () => apiFetch(`/api/exercise-entries/${entry.id}`, { method: "DELETE" }),
+    onMutate: () => setError(null),
+    onError: (caught) =>
+      setError(caught instanceof ApiError ? caught.message : "Could not remove that exercise."),
+    onSettled: settle,
+  });
+
+  function onAddSet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
-    /** The same schema the handler runs; this pass only saves a round trip. */
-    /** The edge: what was typed is converted to kilograms once, here. */
+    /** The unit edge: what was typed becomes kilograms exactly here. */
     const parsed = addSetSchema.safeParse({
       reps: Number(reps),
       weight: toKilograms(Number(weight), unit),
@@ -87,39 +174,7 @@ export function ExerciseEntryCard({
       return;
     }
 
-    setPending(true);
-    try {
-      await apiFetch<LoggedSet>(`/api/exercise-entries/${entry.id}/sets`, {
-        method: "POST",
-        body: JSON.stringify(parsed.data),
-      });
-      setIsWarmup(false);
-      onChanged();
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not log that set.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function onDeleteSet(setId: string) {
-    setError(null);
-    try {
-      await apiFetch(`/api/sets/${setId}`, { method: "DELETE" });
-      onChanged();
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not remove that set.");
-    }
-  }
-
-  async function onRemoveEntry() {
-    setError(null);
-    try {
-      await apiFetch(`/api/exercise-entries/${entry.id}`, { method: "DELETE" });
-      onChanged();
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not remove that exercise.");
-    }
+    logSet.mutate({ ...parsed.data, isWarmup: parsed.data.isWarmup ?? false });
   }
 
   const workingSets = entry.sets.filter((set) => !set.isWarmup);
@@ -179,8 +234,10 @@ export function ExerciseEntryCard({
                 key={set.id}
                 set={set}
                 unit={unit}
-                onDelete={() => onDeleteSet(set.id)}
-                onSaved={onChanged}
+                onDelete={() => removeSet.mutate(set.id)}
+                onSaved={settle}
+                onOptimistic={patchCachedSets}
+                onRollback={rollback}
                 onError={setError}
               />
             ))}
@@ -219,8 +276,8 @@ export function ExerciseEntryCard({
             />
             Warm-up
           </label>
-          <Button type="submit" disabled={pending} className="mb-0.5">
-            {pending ? "Logging…" : "Log set"}
+          <Button type="submit" className="mb-0.5">
+            Log set
           </Button>
         </form>
 
@@ -232,7 +289,7 @@ export function ExerciseEntryCard({
             {workingSets.length} working {workingSets.length === 1 ? "set" : "sets"} ·{" "}
             {formatVolume(volume, unit)} volume
           </span>
-          <Button type="button" variant="ghost" size="sm" onClick={onRemoveEntry}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => removeEntry.mutate()}>
             Remove exercise
           </Button>
         </div>
@@ -251,45 +308,71 @@ function SetRow({
   unit,
   onDelete,
   onSaved,
+  onOptimistic,
+  onRollback,
   onError,
 }: {
   set: LoggedSet;
   unit: WeightUnit;
   onDelete: () => void;
   onSaved: () => void;
+  onOptimistic: (update: (sets: LoggedSet[]) => LoggedSet[]) => LoggedWorkoutSession | null | undefined;
+  onRollback: (previous: LoggedWorkoutSession | null | undefined, message: string) => void;
   onError: (message: string | null) => void;
 }) {
+  /**
+   * Two ways a row can be unsaved: it was just logged and exists only in the
+   * cache, or an edit to it is still in flight. Both show "saving…", because
+   * both mean navigating away now loses the change.
+   */
+  const optimistic = set.id.startsWith(PENDING_PREFIX);
   const [editing, setEditing] = useState(false);
   const [reps, setReps] = useState(String(set.reps));
   const [weight, setWeight] = useState(String(fromKilograms(set.weight, unit)));
-  const [saving, setSaving] = useState(false);
 
-  async function onSave(event: FormEvent<HTMLFormElement>) {
+  const save = useMutation({
+    mutationFn: (input: { reps: number; weight: number }) =>
+      apiFetch<LoggedSet>(`/api/sets/${set.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    onMutate: (input) => {
+      onError(null);
+      setEditing(false);
+      return {
+        previous: onOptimistic((sets) =>
+          sets.map((candidate) =>
+            candidate.id === set.id ? { ...candidate, ...input } : candidate,
+          ),
+        ),
+      };
+    },
+    onError: (caught, _input, context) => {
+      setEditing(true);
+      onRollback(
+        context?.previous,
+        caught instanceof ApiError ? caught.message : "Could not save that set.",
+      );
+    },
+    onSettled: onSaved,
+  });
+
+  const pending = optimistic || save.isPending;
+
+  function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onError(null);
 
     const parsed = updateSetSchema.safeParse({
       reps: Number(reps),
       weight: toKilograms(Number(weight), unit),
     });
+
     if (!parsed.success) {
       onError(parsed.error.issues[0]?.message ?? "Check the set.");
       return;
     }
 
-    setSaving(true);
-    try {
-      await apiFetch<LoggedSet>(`/api/sets/${set.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(parsed.data),
-      });
-      setEditing(false);
-      onSaved();
-    } catch (caught) {
-      onError(caught instanceof ApiError ? caught.message : "Could not save that set.");
-    } finally {
-      setSaving(false);
-    }
+    save.mutate({ reps: parsed.data.reps!, weight: parsed.data.weight! });
   }
 
   if (editing) {
@@ -312,8 +395,8 @@ function SetRow({
             aria-label={`Weight for set ${set.position}`}
           />
           <span className="text-muted-foreground text-xs">{unit}</span>
-          <Button type="submit" size="sm" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+          <Button type="submit" size="sm">
+            Save
           </Button>
           <Button
             type="button"
@@ -334,16 +417,18 @@ function SetRow({
 
   return (
     <li className="flex items-center justify-between gap-2 tabular-nums">
-      <span>
+      <span className={pending ? "text-muted-foreground" : undefined}>
         <span className="text-muted-foreground mr-2">{set.position}</span>
         {set.reps} × {fromKilograms(set.weight, unit)} {unit}
         {set.isWarmup ? <span className="text-muted-foreground ml-2 text-xs">warm-up</span> : null}
+        {pending ? <span className="ml-2 text-xs">saving…</span> : null}
       </span>
       <span className="flex gap-1">
         <Button
           type="button"
           variant="ghost"
           size="sm"
+          disabled={pending}
           onClick={() => setEditing(true)}
           aria-label={`Edit set ${set.position}`}
         >
@@ -353,6 +438,7 @@ function SetRow({
           type="button"
           variant="ghost"
           size="sm"
+          disabled={pending}
           onClick={onDelete}
           aria-label={`Remove set ${set.position}`}
         >

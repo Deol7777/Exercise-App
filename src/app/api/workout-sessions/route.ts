@@ -2,7 +2,8 @@
  * /api/workout-sessions — the training log's collection endpoint.
  *
  * GET  lists this user's sessions, newest first, with entry and set counts.
- *      `?active=true` returns only the one still in progress, or null.
+ *      `?active=true` returns the one still in progress with its exercise
+ *      entries and sets, or null — the logging screen's whole payload.
  * POST starts a session. Only one may be in progress at a time; a second
  *      attempt is a 409.
  *
@@ -14,7 +15,7 @@ import type { NextRequest } from "next/server";
 import { createWorkoutSessionSchema } from "@/lib/validation/training";
 import { currentUserId } from "@/server/auth";
 import {
-  getActiveWorkoutSession,
+  getActiveWorkoutSessionDetail,
   listWorkoutSessionsFor,
   startWorkoutSession,
 } from "@/server/services/training";
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
   try {
     if (params.get("active") === "true") {
-      return NextResponse.json(await getActiveWorkoutSession(userId));
+      return NextResponse.json(await getActiveWorkoutSessionDetail(userId));
     }
 
     const limit = Math.min(Number(params.get("limit")) || 30, MAX_LIMIT);

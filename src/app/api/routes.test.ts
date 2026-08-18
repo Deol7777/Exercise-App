@@ -183,6 +183,46 @@ describe("the write path over HTTP", () => {
   });
 });
 
+describe("the active workout session", () => {
+  it("comes back with its exercise entries and sets, or null", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const empty = await getSessions(
+      new NextRequest("http://localhost/api/workout-sessions?active=true"),
+    );
+    expect(await empty.json()).toBeNull();
+
+    const started = await postSession(json("/api/workout-sessions", "POST", {}));
+    const session = (await started.json()) as { id: string };
+    const added = await postEntry(
+      json(`/api/workout-sessions/${session.id}/exercises`, "POST", {
+        exerciseId: await globalExercise(userId, "Deadlift"),
+      }),
+      context(session.id),
+    );
+    const entry = (await added.json()) as { id: string };
+    await postSet(
+      json(`/api/exercise-entries/${entry.id}/sets`, "POST", { reps: 5, weight: 100 }),
+      context(entry.id),
+    );
+
+    /** One request, the whole screen: this is what the query cache holds. */
+    const active = await getSessions(
+      new NextRequest("http://localhost/api/workout-sessions?active=true"),
+    );
+    const body = (await active.json()) as {
+      id: string;
+      exercises: { sets: { reps: number; weight: number }[] }[];
+    };
+
+    expect(body.id).toBe(session.id);
+    expect(body.exercises[0].sets).toEqual([
+      expect.objectContaining({ reps: 5, weight: 100, position: 1 }),
+    ]);
+  });
+});
+
 describe("reordering over HTTP", () => {
   it("takes the full order and answers with the new positions", async () => {
     const userId = await createUser();

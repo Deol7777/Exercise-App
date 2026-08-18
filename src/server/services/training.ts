@@ -66,6 +66,20 @@ export function getActiveWorkoutSession(userId: string): Promise<WorkoutSessionR
   return findActiveWorkoutSession(userId);
 }
 
+/**
+ * The session in progress with its exercise entries and sets — the exact shape
+ * the logging screen renders, so it is one call rather than "which one?"
+ * followed by "and what is in it?".
+ */
+export async function getActiveWorkoutSessionDetail(
+  userId: string,
+): Promise<WorkoutSessionDetail | null> {
+  const active = await findActiveWorkoutSession(userId);
+  if (!active) return null;
+
+  return findWorkoutSessionDetail(userId, active.id);
+}
+
 export function listWorkoutSessionsFor(
   userId: string,
   options: { limit?: number; offset?: number } = {},

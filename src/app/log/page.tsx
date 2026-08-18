@@ -10,8 +10,7 @@ import type {
 import { requireAccount } from "@/app/_lib/require-account";
 import { listExercises } from "@/server/services/exercises";
 import {
-  getActiveWorkoutSession,
-  getWorkoutSession,
+  getActiveWorkoutSessionDetail,
   listWorkoutSessionsFor,
   type WorkoutSessionDetail,
   type WorkoutSessionSummary,
@@ -28,9 +27,8 @@ import {
 export default async function LogPage() {
   const { userId, unit } = await requireAccount();
 
-  const active = await getActiveWorkoutSession(userId);
   const [detail, catalog, recent] = await Promise.all([
-    active ? getWorkoutSession(userId, active.id) : Promise.resolve(null),
+    getActiveWorkoutSessionDetail(userId),
     listExercises(userId),
     listWorkoutSessionsFor(userId, { limit: 5 }),
   ]);

@@ -37,7 +37,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 77 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 78 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -49,7 +49,7 @@ built and running against the live database.
 | `/api/auth/[...nextauth]` | Auth.js: sign in, sign out, session. |
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
 | `POST /api/exercises` | Create a custom exercise, private to the caller. |
-| `GET /api/workout-sessions` | This user's sessions, newest first, with entry and set counts. `?active=true` returns the one in progress, or `null`. |
+| `GET /api/workout-sessions` | This user's sessions, newest first, with entry and set counts. `?active=true` returns the one in progress **with its exercise entries and sets**, or `null` — the logging screen's whole payload. |
 | `POST /api/workout-sessions` | Start a session. 409 if one is already in progress. |
 | `GET /api/workout-sessions/[id]` | One session with its exercise entries and their sets. |
 | `PATCH /api/workout-sessions/[id]` | Edit notes and/or `endedAt`. `endedAt: null` reopens it. |
@@ -76,8 +76,8 @@ already visible.
 
 | Component | Lives in | Responsibility | Talks to |
 | --- | --- | --- | --- |
-| Web UI | `src/app/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts`, domain services (server components only) |
-| API client | `src/lib/api.ts` | The browser's side of the REST contract: one `apiFetch`, which throws `ApiError` carrying the handler's `{ error, fields }`. No caching — TanStack Query _(planned)_ goes here | REST API |
+| Web UI | `src/app/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts` and TanStack Query, domain services (server components only) |
+| API client | `src/lib/api.ts`, `src/lib/queries.ts`, `src/app/providers.tsx` | The browser's side of the REST contract: one `apiFetch` throwing `ApiError`, and the TanStack Query cache the logging screen runs on (ADR 0014) | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
 | Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, weekly volume | PostgreSQL |
@@ -249,10 +249,15 @@ drizzle-kit migrations.
   expires. `requireAccount()` in `src/app/_lib/` and the landing page treat that
   as signed out; anything new that reads the session must do the same, or it
   will 500 in exactly that state.
-- **A set is written per request, and the screen refetches the whole page.**
-  Every mutation is a `fetch` followed by `router.refresh()`; there is no client
-  cache and no optimistic update, so a set logged on a slow connection shows a
-  visible pause. TanStack Query is chosen for this and not installed.
+- **An optimistic write can be lost by navigating away.** A logged or edited set
+  appears before the server has it (ADR 0014). The row shows "saving…" with its
+  controls disabled until the write lands, but nothing stops a user leaving the
+  page in that window, and they will have seen the set appear. A durable fix is
+  a persisted mutation queue.
+- **The first paint and the cache are two sources of truth.** `/log` renders
+  from `getActiveWorkoutSessionDetail` and the cache refetches
+  `GET /api/workout-sessions?active=true`. They agree today because they are the
+  same call; nothing enforces that they keep agreeing.
 - **`position` is left with gaps.** Deleting a set or an exercise entry does not
   renumber what follows, so a UI that prints the number shows 1, 2, 4. A reorder
   closes the gaps for exercise entries as a side effect; sets have no reorder,

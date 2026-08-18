@@ -61,6 +61,12 @@ transaction in foreign-key order (training data → custom exercises → user),
 confirmed by typing the email. Signed-in pages resolve the session through
 `src/app/_lib/require-account.ts`, because a JWT can outlive its account.
 
+**The logging screen runs on TanStack Query** (ADR 0014): server components
+render the first paint and pass `initialData`, mutations invalidate the two keys
+in `src/lib/queries.ts`, and logging, editing, deleting a set and reordering are
+optimistic. An unsaved row renders "saving…" with its controls disabled — an
+end-to-end test that asserts on the DOM alone will pass before the write lands.
+
 Still missing: **no component-level test runner** (no jsdom, no Testing
 Library), so components off those three paths are verified by hand. Sets cannot
 be reordered (exercise entries can).

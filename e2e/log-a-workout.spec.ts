@@ -17,6 +17,14 @@ import { TEST_DATABASE_URL } from "./global-setup";
 const account = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.test`;
 const PASSWORD = "correct-horse-battery";
 
+/**
+ * Sets are logged optimistically, so the row appears before the write lands.
+ * Waiting for "saving…" to clear is waiting for the server, not the animation.
+ */
+async function expectSaved(page: import("@playwright/test").Page) {
+  await expect(page.getByText("saving…")).toHaveCount(0);
+}
+
 async function signUp(page: import("@playwright/test").Page, email: string) {
   await page.goto("/sign-up");
   await page.getByLabel("Email").fill(email);
@@ -59,6 +67,7 @@ test("signs up, logs a workout, and reads it back", async ({ page }) => {
   await page.getByRole("button", { name: "Log set" }).click();
 
   await expect(page.getByText("5 × 80 kg")).toBeVisible();
+  await expectSaved(page);
   await expect(page.getByText("1 working set · 400 kg volume")).toBeVisible();
 
   await page.getByRole("button", { name: "Finish workout" }).click();
@@ -85,12 +94,14 @@ test("corrects a set, and shows every weight in the chosen unit", async ({ page 
   await page.getByLabel("Weight (kg)").fill("100");
   await page.getByRole("button", { name: "Log set" }).click();
   await expect(page.getByText("5 × 100 kg")).toBeVisible();
+  await expectSaved(page);
 
   /** A weight typed one digit out, corrected in place. */
   await page.getByRole("button", { name: "Edit set 1" }).click();
   await page.getByLabel("Weight for set 1").fill("102.5");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("5 × 102.5 kg")).toBeVisible();
+  await expectSaved(page);
 
   await page.goto("/");
   await page.getByLabel("Display unit").click();
@@ -148,6 +159,7 @@ test("deletes an account, and everything in it", async ({ page }) => {
   await page.getByRole("option", { name: "Deadlift", exact: true }).click();
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("button", { name: "Log set" }).click();
+  await expectSaved(page);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Delete account" }).click();
