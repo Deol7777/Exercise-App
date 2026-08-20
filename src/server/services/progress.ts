@@ -6,13 +6,21 @@
  * services/training.ts, and knows nothing about HTTP.
  */
 import {
+  type Month,
+  monthEnd,
+  monthStart,
+} from "@/lib/month";
+
+import {
   findLastPerformance,
   findLatestFinishedSession,
+  findMonthOfSessions,
   findPersonalRecords,
   findTodaySession,
   findWeekTotals,
   findWeeklyVolume,
   type LastPerformance,
+  type MonthDay,
   type PersonalRecord,
   type SessionTotals,
   type WeekTotals,
@@ -20,7 +28,14 @@ import {
 } from "../db/queries/progress";
 import { getExercise } from "./exercises";
 
-export type { LastPerformance, PersonalRecord, SessionTotals, WeekTotals, WeeklyVolumePoint };
+export type {
+  LastPerformance,
+  MonthDay,
+  PersonalRecord,
+  SessionTotals,
+  WeekTotals,
+  WeeklyVolumePoint,
+};
 
 /** Bounded so a hand-written query string cannot ask for an unbounded scan. */
 const MIN_WEEKS = 1;
@@ -91,5 +106,38 @@ export async function getTrainingSummary(userId: string): Promise<TrainingSummar
     },
     today,
     lastSession,
+  };
+}
+
+export type MonthOfHistory = {
+  /** The days with a workout on them, ascending. Days without one are absent. */
+  days: MonthDay[];
+  /** Sessions started in the month, finished or not. */
+  workouts: number;
+  /**
+   * Whole minutes spent training across the month. A session still running
+   * contributes nothing — it has no length yet, and counting the time since it
+   * started would make the number climb while nobody is in the gym.
+   */
+  minutes: number;
+};
+
+/**
+ * The history screen's calendar and the band under it, in one call.
+ *
+ * The totals are summed here rather than in a second statement: the per-day
+ * rows are at most 31 of them and already carry everything the totals need, so
+ * a `sum` over the same range would be a second definition of "this month".
+ */
+export async function getMonthOfHistory(
+  userId: string,
+  month: Month,
+): Promise<MonthOfHistory> {
+  const days = await findMonthOfSessions(userId, monthStart(month), monthEnd(month));
+
+  return {
+    days,
+    workouts: days.reduce((total, day) => total + day.sessionCount, 0),
+    minutes: Math.floor(days.reduce((total, day) => total + day.seconds, 0) / 60),
   };
 }

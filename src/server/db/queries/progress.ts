@@ -334,3 +334,57 @@ export async function findLatestFinishedSession(
 
   return session ? totalsFor(session) : null;
 }
+
+/**
+ * One day of the history calendar that has at least one workout on it.
+ *
+ * `day` is the day of the month as an integer rather than a `Date` on purpose.
+ * A `Date` would be read back with `getDate()` somewhere and silently shift a
+ * cell for anyone outside the database's timezone — `extract(day from …)` and
+ * src/lib/month.ts agree on UTC and cannot drift.
+ */
+export type MonthDay = {
+  /** 1–31, in the database's timezone (UTC on Neon). */
+  day: number;
+  sessionCount: number;
+  /** The earliest session of that day: where tapping the cell goes. */
+  workoutSessionId: string;
+  /** Total seconds of *finished* sessions that day; a running one adds none. */
+  seconds: number;
+};
+
+/**
+ * Every day of one month that has a workout on it, with the counts the history
+ * screen totals up.
+ *
+ * Grouped in SQL rather than fetched row by row and bucketed in JS, so the day
+ * boundary is Postgres's — the same `date_trunc` cut the rest of this file uses.
+ * Seconds rather than minutes because the caller sums across the month and
+ * floors once: summing per-day floors loses up to a minute a day.
+ *
+ * Unfinished sessions count as workouts and contribute no time, which is why
+ * `sum` is over a filtered expression instead of the whole group.
+ */
+export async function findMonthOfSessions(
+  userId: string,
+  from: Date,
+  to: Date,
+): Promise<MonthDay[]> {
+  return db
+    .select({
+      day: sql<number>`extract(day from ${workoutSessions.startedAt})::int`.as("day"),
+      sessionCount: sql<number>`count(*)::int`,
+      workoutSessionId: sql<string>`(array_agg(${workoutSessions.id} order by ${workoutSessions.startedAt}))[1]`,
+      seconds: sql<number>`coalesce(sum(extract(epoch from (${workoutSessions.endedAt} - ${workoutSessions.startedAt}))), 0)::float8`,
+    })
+    .from(workoutSessions)
+    .where(
+      and(
+        eq(workoutSessions.userId, userId),
+        gte(workoutSessions.startedAt, from),
+        lt(workoutSessions.startedAt, to),
+      ),
+    )
+    .groupBy(sql`1`)
+    .orderBy(sql`1`);
+}

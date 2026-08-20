@@ -6,8 +6,19 @@ import { describe, expect, it } from "vitest";
 
 import { createUser, globalExercise } from "@/test/factories";
 
-import { addExerciseEntry, finishWorkoutSession, logSet, startWorkoutSession } from "./training";
-import { getLastPerformance, getPersonalRecords, getWeeklyVolume } from "./progress";
+import {
+  addExerciseEntry,
+  editWorkoutSession,
+  finishWorkoutSession,
+  logSet,
+  startWorkoutSession,
+} from "./training";
+import {
+  getLastPerformance,
+  getMonthOfHistory,
+  getPersonalRecords,
+  getWeeklyVolume,
+} from "./progress";
 
 const DAY = 86_400_000;
 
@@ -167,5 +178,113 @@ describe("weekly volume", () => {
     await loggedSession(userId, "Deadlift", [{ reps: 5, weight: 140 }], 60);
 
     expect(await getWeeklyVolume(userId, 4)).toEqual([]);
+  });
+});
+
+describe("a month of history", () => {
+  /**
+   * Dates are pinned in UTC because that is the cut `findMonthOfSessions`
+   * groups on. A test written with local dates passes in one timezone and
+   * fails a cell either side of it in another.
+   */
+  const MONTH = { year: 2026, month: 3 };
+
+  /** A session on a given day of March 2026, running for `minutes`. */
+  async function marchSession(
+    userId: string,
+    day: number,
+    { hour = 9, minutes }: { hour?: number; minutes: number | null },
+  ) {
+    const startedAt = new Date(Date.UTC(2026, 2, day, hour));
+    const session = await startWorkoutSession(userId, { startedAt: startedAt.toISOString() });
+
+    if (minutes !== null) {
+      await editWorkoutSession(userId, session.id, {
+        endedAt: new Date(startedAt.getTime() + minutes * 60_000).toISOString(),
+      });
+    }
+
+    return session;
+  }
+
+  it("reports one row per trained day, with the counts", async () => {
+    const userId = await createUser();
+    await marchSession(userId, 3, { minutes: 45 });
+    await marchSession(userId, 11, { minutes: 62 });
+
+    const { days, workouts, minutes } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days.map((entry) => entry.day)).toEqual([3, 11]);
+    expect(workouts).toBe(2);
+    expect(minutes).toBe(107);
+  });
+
+  it("collapses two sessions on one day into one row, pointing at the first", async () => {
+    const userId = await createUser();
+    const morning = await marchSession(userId, 8, { hour: 7, minutes: 30 });
+    await marchSession(userId, 8, { hour: 18, minutes: 40 });
+
+    const { days, workouts, minutes } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days).toHaveLength(1);
+    expect(days[0]).toMatchObject({ day: 8, sessionCount: 2, workoutSessionId: morning.id });
+    expect(workouts).toBe(2);
+    expect(minutes).toBe(70);
+  });
+
+  it("counts an unfinished session as a workout but adds no time", async () => {
+    const userId = await createUser();
+    await marchSession(userId, 5, { minutes: null });
+
+    const { days, workouts, minutes } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days).toEqual([
+      expect.objectContaining({ day: 5, sessionCount: 1, seconds: 0 }),
+    ]);
+    expect(workouts).toBe(1);
+    expect(minutes).toBe(0);
+  });
+
+  it("excludes the months either side, to the boundary", async () => {
+    const userId = await createUser();
+    /** 23:00 on the last day of February and 00:00 on the 1st of April. */
+    const february = await startWorkoutSession(userId, {
+      startedAt: new Date(Date.UTC(2026, 1, 28, 23)).toISOString(),
+    });
+    await editWorkoutSession(userId, february.id, {
+      endedAt: new Date(Date.UTC(2026, 1, 28, 24)).toISOString(),
+    });
+    await marchSession(userId, 1, { hour: 0, minutes: 20 });
+    await marchSession(userId, 31, { hour: 23, minutes: 20 });
+    const april = await startWorkoutSession(userId, {
+      startedAt: new Date(Date.UTC(2026, 3, 1)).toISOString(),
+    });
+    await editWorkoutSession(userId, april.id, {
+      endedAt: new Date(Date.UTC(2026, 3, 1, 1)).toISOString(),
+    });
+
+    const { days, workouts, minutes } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days.map((entry) => entry.day)).toEqual([1, 31]);
+    expect(workouts).toBe(2);
+    expect(minutes).toBe(40);
+  });
+
+  it("keeps one user's month away from another's", async () => {
+    const mine = await createUser();
+    const theirs = await createUser();
+    await marchSession(theirs, 12, { minutes: 90 });
+
+    expect(await getMonthOfHistory(mine, MONTH)).toEqual({ days: [], workouts: 0, minutes: 0 });
+  });
+
+  it("returns numbers, not the strings the driver hands back", async () => {
+    const userId = await createUser();
+    await marchSession(userId, 17, { minutes: 55 });
+
+    const [day] = (await getMonthOfHistory(userId, MONTH)).days;
+    expect(typeof day.day).toBe("number");
+    expect(typeof day.sessionCount).toBe("number");
+    expect(typeof day.seconds).toBe("number");
   });
 });
