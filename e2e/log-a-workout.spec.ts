@@ -18,11 +18,28 @@ const account = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8
 const PASSWORD = "correct-horse-battery";
 
 /**
- * Sets are logged optimistically, so the row appears before the write lands.
- * Waiting for "saving…" to clear is waiting for the server, not the animation.
+ * Adds an exercise to the running workout. Picking one navigates straight to
+ * its stepper, which is where sets are logged.
  */
-async function expectSaved(page: import("@playwright/test").Page) {
-  await expect(page.getByText("saving…")).toHaveCount(0);
+async function addExercise(page: import("@playwright/test").Page, name: string) {
+  await page.getByLabel("Add an exercise").click();
+  await page.getByRole("option", { name, exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.waitForURL(/\/log\/[0-9a-f-]+$/);
+}
+
+/**
+ * Logs one set on the stepper. The fields are typable as well as tappable,
+ * because reaching 100 kg two-and-a-half at a time is forty taps.
+ */
+async function logSet(
+  page: import("@playwright/test").Page,
+  { weight, reps, unit = "kg" }: { weight: string; reps: string; unit?: string },
+) {
+  /** `exact`, or the label also matches the "Increase Weight (kg)" buttons. */
+  await page.getByLabel(`Weight (${unit})`, { exact: true }).fill(weight);
+  await page.getByLabel("Reps", { exact: true }).fill(reps);
+  await page.getByRole("button", { name: "Complete set" }).click();
 }
 
 async function signUp(page: import("@playwright/test").Page, email: string) {
@@ -30,7 +47,37 @@ async function signUp(page: import("@playwright/test").Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText("Signed in as")).toBeVisible();
+  /** The tab bar renders only for a signed-in user, so it is the arrival signal. */
+  await expect(tabBar(page)).toBeVisible();
+}
+
+const tabBar = (page: import("@playwright/test").Page) =>
+  page.getByRole("navigation", { name: "Primary" });
+
+const TAB_URLS = {
+  Home: /\/$/,
+  Workout: /\/log$/,
+  Browse: /\/browse$/,
+  History: /\/history$/,
+  Progress: /\/progress$/,
+} as const;
+
+/**
+ * Clicks a tab and waits for the destination to commit.
+ *
+ * Both halves matter. The click is scoped to the bar because its labels repeat
+ * on the pages it lands on — "History" is a tab *and* a link on the logging
+ * screen. The wait is there because "Start workout" exists on the home screen
+ * as well as the logging screen: acting straight after the click can hit the
+ * home button while the navigation is still in flight, which starts a session
+ * and leaves the next one to fail as a conflict.
+ */
+async function openTab(
+  page: import("@playwright/test").Page,
+  name: keyof typeof TAB_URLS,
+) {
+  await tabBar(page).getByRole("link", { name }).click();
+  await page.waitForURL(TAB_URLS[name]);
 }
 
 test("signs up, logs a workout, and reads it back", async ({ page }) => {
@@ -49,31 +96,30 @@ test("signs up, logs a workout, and reads it back", async ({ page }) => {
     await pool.end();
   }
 
-  await page.getByRole("link", { name: "Open the log" }).click();
+  await openTab(page, "Workout");
   await expect(page.getByText("No workout in progress")).toBeVisible();
 
   await page.getByRole("button", { name: "Start workout" }).click();
   await expect(page.getByText("Workout in progress")).toBeVisible();
 
-  await page.getByLabel("Add an exercise").click();
-  await page.getByRole("option", { name: "Barbell Bench Press", exact: true }).click();
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addExercise(page, "Barbell Bench Press");
+  await expect(page.getByText("Exercise 1 of 1")).toBeVisible();
 
+  await logSet(page, { weight: "80", reps: "5" });
+  await expect(page.getByRole("button", { name: "Set 1" })).toContainText("80 kg × 5");
+
+  /** The same set, back on the list the stepper was reached from. */
+  await openTab(page, "Workout");
   await expect(page.getByText("1. Barbell Bench Press")).toBeVisible();
-  await expect(page.getByText("No sets yet.")).toBeVisible();
-
-  await page.getByLabel("Reps", { exact: true }).fill("5");
-  await page.getByLabel("Weight (kg)").fill("80");
-  await page.getByRole("button", { name: "Log set" }).click();
-
   await expect(page.getByText("5 × 80 kg")).toBeVisible();
-  await expectSaved(page);
   await expect(page.getByText("1 working set · 400 kg volume")).toBeVisible();
 
+  /** Finishing is behind a confirmation dialog, so it takes two taps. */
   await page.getByRole("button", { name: "Finish workout" }).click();
+  await page.getByRole("button", { name: "Yeah, I'm done" }).click();
   await expect(page.getByText("No workout in progress")).toBeVisible();
 
-  await page.getByRole("link", { name: "History" }).click();
+  await openTab(page, "History");
   await expect(page.getByText("1 exercises · 1 sets")).toBeVisible();
 
   await page.getByRole("link", { name: /exercises · 1 sets/ }).click();
@@ -84,26 +130,20 @@ test("signs up, logs a workout, and reads it back", async ({ page }) => {
 test("corrects a set, and shows every weight in the chosen unit", async ({ page }) => {
   await signUp(page, account());
 
-  await page.getByRole("link", { name: "Open the log" }).click();
+  await openTab(page, "Workout");
   await page.getByRole("button", { name: "Start workout" }).click();
-  await page.getByLabel("Add an exercise").click();
-  await page.getByRole("option", { name: "Deadlift", exact: true }).click();
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addExercise(page, "Deadlift");
 
-  await page.getByLabel("Reps", { exact: true }).fill("5");
-  await page.getByLabel("Weight (kg)").fill("100");
-  await page.getByRole("button", { name: "Log set" }).click();
-  await expect(page.getByText("5 × 100 kg")).toBeVisible();
-  await expectSaved(page);
+  await logSet(page, { weight: "100", reps: "5" });
+  await expect(page.getByRole("button", { name: "Set 1" })).toContainText("100 kg × 5");
 
-  /** A weight typed one digit out, corrected in place. */
-  await page.getByRole("button", { name: "Edit set 1" }).click();
-  await page.getByLabel("Weight for set 1").fill("102.5");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("5 × 102.5 kg")).toBeVisible();
-  await expectSaved(page);
+  /** A weight typed one digit out: tapping the set loads it back to be fixed. */
+  await page.getByRole("button", { name: "Set 1" }).click();
+  await page.getByLabel("Weight (kg)", { exact: true }).fill("102.5");
+  await page.getByRole("button", { name: "Update set" }).click();
+  await expect(page.getByRole("button", { name: "Set 1" })).toContainText("102.5 kg × 5");
 
-  await page.goto("/");
+  await page.goto("/settings");
   await page.getByLabel("Display unit").click();
   /**
    * Waiting for the request, not the control: the select updates itself
@@ -120,7 +160,10 @@ test("corrects a set, and shows every weight in the chosen unit", async ({ page 
   await page.goto("/log");
   /** 102.5 kg is 225.97 lb, shown to one decimal place. */
   await expect(page.getByText("5 × 226 lb")).toBeVisible();
-  await expect(page.getByLabel("Weight (lb)")).toBeVisible();
+
+  /** And the stepper it was logged on is in pounds too. */
+  await page.getByRole("link", { name: "Log Deadlift" }).click();
+  await expect(page.getByLabel("Weight (lb)", { exact: true })).toHaveValue("226");
 
   await page.goto("/progress");
   await expect(page.getByText("226 lb × 5")).toBeVisible();
@@ -128,13 +171,12 @@ test("corrects a set, and shows every weight in the chosen unit", async ({ page 
 
 test("keeps one user's log away from another", async ({ page, context }) => {
   await signUp(page, account());
-  await page.getByRole("link", { name: "Open the log" }).click();
+  await openTab(page, "Workout");
   await page.getByRole("button", { name: "Start workout" }).click();
-  await page.getByLabel("Add an exercise").click();
-  await page.getByRole("option", { name: "Back Squat", exact: true }).click();
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addExercise(page, "Back Squat");
 
-  const url = page.url();
+  /** The stepper for this user's entry, by id. */
+  const entryUrl = page.url();
 
   await context.clearCookies();
   await signUp(page, account());
@@ -145,23 +187,22 @@ test("keeps one user's log away from another", async ({ page, context }) => {
   await page.goto("/history");
   await expect(page.getByText("Nothing logged yet")).toBeVisible();
 
-  await page.goto(url);
-  await expect(page.getByText("No workout in progress")).toBeVisible();
+  /** Somebody else's exercise entry does not exist, rather than being refused. */
+  const response = await page.goto(entryUrl);
+  expect(response?.status()).toBe(404);
 });
 
 test("deletes an account, and everything in it", async ({ page }) => {
   const email = account();
   await signUp(page, email);
 
-  await page.getByRole("link", { name: "Open the log" }).click();
+  await openTab(page, "Workout");
   await page.getByRole("button", { name: "Start workout" }).click();
-  await page.getByLabel("Add an exercise").click();
-  await page.getByRole("option", { name: "Deadlift", exact: true }).click();
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await page.getByRole("button", { name: "Log set" }).click();
-  await expectSaved(page);
+  await addExercise(page, "Deadlift");
+  await logSet(page, { weight: "100", reps: "5" });
+  await expect(page.getByRole("button", { name: "Set 1" })).toBeVisible();
 
-  await page.goto("/");
+  await page.goto("/settings");
   await page.getByRole("button", { name: "Delete account" }).click();
   await expect(page.getByRole("button", { name: "Delete everything" })).toBeDisabled();
 
@@ -213,5 +254,59 @@ test("a session that outlives its account lands on sign-in, not an error", async
   /** The landing page renders as signed out rather than failing. */
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
-  await expect(page.getByText("Signed in as")).toBeHidden();
+  await expect(tabBar(page)).toBeHidden();
+});
+
+test("logs a set from the stepper, and corrects it there", async ({ page }) => {
+  await signUp(page, account());
+  await openTab(page, "Workout");
+  await page.getByRole("button", { name: "Start workout" }).click();
+  /** Picking an exercise goes straight to its stepper. */
+  await addExercise(page, "Barbell Bench Press");
+  await expect(page.getByText("Exercise 1 of 1")).toBeVisible();
+
+  /** And the whole card on the list is the way back in. */
+  await openTab(page, "Workout");
+  await page.getByRole("link", { name: "Log Barbell Bench Press" }).click();
+  await expect(page).toHaveURL(/\/log\/[0-9a-f-]+$/);
+
+  /**
+   * With nothing logged and no history for this exercise, the stepper opens on
+   * a bare bar: 20 kg for 8. Weight moves a plate at a time, reps one at a time.
+   */
+  await page.getByRole("button", { name: "Increase Weight (kg)" }).click();
+  await page.getByRole("button", { name: "Increase Reps" }).click();
+  await page.getByRole("button", { name: "Complete set" }).click();
+
+  await expect(page.getByRole("button", { name: "Set 1" })).toContainText("22.5 kg × 9");
+
+  /** Tapping a logged set loads it back into the stepper to be corrected. */
+  await page.getByRole("button", { name: "Set 1" }).click();
+  await page.getByRole("button", { name: "Decrease Weight (kg)" }).click();
+  await page.getByRole("button", { name: "Update set" }).click();
+  await expect(page.getByRole("button", { name: "Set 1" })).toContainText("20 kg × 9");
+
+  /**
+   * The fields take numbers and nothing else. Typed letters never land, so a
+   * weight can never be coerced from nonsense into a silent zero — and an empty
+   * field blocks the button rather than logging one.
+   */
+  const weight = page.getByLabel("Weight (kg)", { exact: true });
+  await weight.fill("");
+  await weight.pressSequentially("12a.b5kg");
+  await expect(weight).toHaveValue("12.5");
+
+  const reps = page.getByLabel("Reps", { exact: true });
+  await reps.fill("");
+  await reps.pressSequentially("7.5x");
+  await expect(reps).toHaveValue("75");
+
+  await weight.fill("");
+  await expect(page.getByRole("button", { name: "Complete set" })).toBeDisabled();
+  await expect(page.getByText("Enter a weight.")).toBeVisible();
+
+  /** The same set, on the screen the stepper was reached from. */
+  await openTab(page, "Workout");
+  await expect(page.getByText("9 × 20 kg")).toBeVisible();
+  await expect(page.getByText("1 working set · 180 kg volume")).toBeVisible();
 });

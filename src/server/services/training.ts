@@ -241,3 +241,48 @@ export async function removeSet(userId: string, setId: string): Promise<void> {
   const deleted = await deleteSetRow(userId, setId);
   if (!deleted) throw new NotFoundError("That set does not exist.");
 }
+
+export type ExerciseEntryDetail = {
+  entry: ExerciseEntryRecord;
+  session: WorkoutSessionRecord;
+  /** 1-based place in the running order, and how many entries there are. */
+  index: number;
+  total: number;
+  /** The neighbours, so the stepper screen can page without another lookup. */
+  previousEntryId: string | null;
+  nextEntryId: string | null;
+};
+
+/**
+ * One exercise entry, with enough of its session to render the stepper screen:
+ * which exercise, which sets, and "exercise 2 of 5".
+ *
+ * It reads the whole session rather than the entry alone because the position
+ * and the neighbours are properties of the session's running order, not of the
+ * row — deriving them from `position` would be wrong the moment a deletion
+ * leaves a gap.
+ */
+export async function getExerciseEntry(
+  userId: string,
+  entryId: string,
+): Promise<ExerciseEntryDetail> {
+  const found = await findExerciseEntry(userId, entryId);
+  if (!found) throw new NotFoundError("That exercise entry does not exist.");
+
+  const detail = await findWorkoutSessionDetail(userId, found.workoutSessionId);
+  if (!detail) throw new NotFoundError("That exercise entry does not exist.");
+
+  const index = detail.exercises.findIndex((candidate) => candidate.id === entryId);
+  if (index < 0) throw new NotFoundError("That exercise entry does not exist.");
+
+  const { exercises, ...session } = detail;
+
+  return {
+    entry: exercises[index],
+    session,
+    index: index + 1,
+    total: exercises.length,
+    previousEntryId: index > 0 ? exercises[index - 1].id : null,
+    nextEntryId: index < exercises.length - 1 ? exercises[index + 1].id : null,
+  };
+}

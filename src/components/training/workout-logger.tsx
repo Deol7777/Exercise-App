@@ -1,11 +1,17 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { ExerciseEntryCard } from "@/components/training/exercise-entry-card";
+import { FinishWorkoutDialog } from "@/components/training/finish-workout-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PillButton } from "@/components/ui/pill-button";
+import { Stat, StatRow } from "@/components/ui/stat";
+import { Surface, SurfaceRule } from "@/components/ui/surface";
+import { SectionHeader } from "@/components/layout/screen";
+import { formatDuration, minutesBetween } from "@/lib/format";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -21,6 +27,7 @@ import { MUSCLE_GROUP_LABELS, MUSCLE_GROUPS } from "@/lib/muscle-groups";
 import { queryKeys } from "@/lib/queries";
 import type {
   ExerciseSummary,
+  LoggedExerciseEntry,
   LoggedWorkoutSession,
   WorkoutSessionListItem,
 } from "@/lib/types/training";
@@ -45,6 +52,7 @@ export function WorkoutLogger({
   recent: WorkoutSessionListItem[];
   unit: WeightUnit;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [exerciseId, setExerciseId] = useState<string>("");
@@ -95,18 +103,25 @@ export function WorkoutLogger({
     ),
   );
 
+  /**
+   * Picking an exercise is the start of logging it, not a filing action — so
+   * this goes straight to the stepper for the entry it just created, rather
+   * than adding a card to a list the person then has to find and tap.
+   */
   const addExercise = useMutation({
-    ...mutation(
-      () =>
-        apiFetch(`/api/workout-sessions/${session?.id}/exercises`, {
-          method: "POST",
-          body: JSON.stringify({ exerciseId }),
-        }),
-      "Could not add that exercise.",
-    ),
-    onSuccess: async () => {
+    /** Written out rather than through `mutation()`, which erases the result type. */
+    mutationFn: () =>
+      apiFetch<LoggedExerciseEntry>(`/api/workout-sessions/${session?.id}/exercises`, {
+        method: "POST",
+        body: JSON.stringify({ exerciseId }),
+      }),
+    onMutate: () => setError(null),
+    onError: (caught: unknown) =>
+      setError(caught instanceof ApiError ? caught.message : "Could not add that exercise."),
+    onSuccess: async (entry) => {
       setExerciseId("");
       await invalidateAll();
+      router.push(`/log/${entry.id}`);
     },
   });
 
@@ -179,38 +194,45 @@ export function WorkoutLogger({
 
   if (!session) {
     return (
-      <div className="flex flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>No workout in progress</CardTitle>
-            <CardDescription>Start one, then add the exercises as you do them.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Button onClick={() => start.mutate()} disabled={busy} className="w-fit">
+      <div className="flex flex-col gap-8">
+        <Surface>
+          <h2 className="text-2xl font-extrabold">No workout in progress</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Start one, then add the exercises as you do them.
+          </p>
+          <div className="mt-5 flex flex-col gap-3">
+            <PillButton onClick={() => start.mutate()} disabled={busy}>
               {start.isPending ? "Starting…" : "Start workout"}
-            </Button>
+            </PillButton>
             {error ? <FieldError>{error}</FieldError> : null}
-          </CardContent>
-        </Card>
+          </div>
+        </Surface>
         <RecentSessions sessions={sessions} />
       </div>
     );
   }
 
+  const workingSets = session.exercises.flatMap((entry) =>
+    entry.sets.filter((set) => !set.isWarmup),
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Workout in progress</CardTitle>
-          <CardDescription>
-            Started{" "}
-            {new Date(session.startedAt).toLocaleString(undefined, {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+    <div className="flex flex-col gap-8">
+      <Surface>
+        <p className="label-caps">Workout in progress</p>
+        <SurfaceRule className="my-4" />
+        <StatRow>
+          <Stat value={session.exercises.length} label="Exercises" size="sm" />
+          <Stat value={workingSets.length} label="Sets" size="sm" />
+          <Stat
+            value={formatDuration(minutesBetween(new Date(session.startedAt), new Date()))}
+            label="Elapsed"
+            size="sm"
+          />
+        </StatRow>
+      </Surface>
+
+      <Surface>
           <form onSubmit={onAddExercise} className="flex flex-wrap items-end gap-3">
             <Field className="w-72">
               <FieldLabel htmlFor="exercise">Add an exercise</FieldLabel>
@@ -236,19 +258,15 @@ export function WorkoutLogger({
             <Button type="submit" disabled={!exerciseId || busy}>
               Add
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => finish.mutate()}
-              disabled={busy}
-              className="ml-auto"
-            >
-              Finish workout
-            </Button>
           </form>
           {error ? <FieldError>{error}</FieldError> : null}
-        </CardContent>
-      </Card>
+      </Surface>
+
+      <FinishWorkoutDialog
+        onConfirm={() => finish.mutate()}
+        disabled={busy}
+        pending={finish.isPending}
+      />
 
       {session.exercises.map((entry, index) => (
         <ExerciseEntryCard
@@ -278,12 +296,10 @@ function RecentSessions({ sessions }: { sessions: WorkoutSessionListItem[] }) {
   if (sessions.length === 0) return null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Recent sessions</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-2 text-sm">
+    <section>
+      <SectionHeader label="Recent sessions" />
+      <Surface>
+        <ul className="flex flex-col gap-3 text-sm">
           {sessions.map((session) => (
             <li key={session.id} className="flex items-center justify-between gap-4">
               <span>
@@ -296,7 +312,7 @@ function RecentSessions({ sessions }: { sessions: WorkoutSessionListItem[] }) {
             </li>
           ))}
         </ul>
-      </CardContent>
-    </Card>
+      </Surface>
+    </section>
   );
 }

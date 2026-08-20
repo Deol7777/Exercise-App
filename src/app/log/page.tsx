@@ -1,13 +1,11 @@
-import Link from "next/link";
-
+import { requireAccount } from "@/app/_lib/require-account";
+import { Screen, ScreenHeader } from "@/components/layout/screen";
 import { WorkoutLogger } from "@/components/training/workout-logger";
-import { Button } from "@/components/ui/button";
 import type {
   ExerciseSummary,
   LoggedWorkoutSession,
   WorkoutSessionListItem,
 } from "@/lib/types/training";
-import { requireAccount } from "@/app/_lib/require-account";
 import { listExercises } from "@/server/services/exercises";
 import {
   getActiveWorkoutSessionDetail,
@@ -34,26 +32,18 @@ export default async function LogPage() {
   ]);
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Log</h1>
-        <nav className="flex gap-1">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/history">History</Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/progress">Progress</Link>
-          </Button>
-        </nav>
-      </header>
-
+    <Screen>
+      <ScreenHeader
+        eyebrow={detail ? "In progress" : "Workout"}
+        title={detail ? "Today's work" : "Nothing running"}
+      />
       <WorkoutLogger
         session={detail && toWireSession(detail)}
         catalog={catalog satisfies ExerciseSummary[]}
         recent={recent.map(toWireSummary)}
         unit={unit}
       />
-    </main>
+    </Screen>
   );
 }
 
