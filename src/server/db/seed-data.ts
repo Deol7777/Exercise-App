@@ -35,12 +35,18 @@ export const GLOBAL_EXERCISES = [
   { name: "Lat Pulldown", muscleGroup: "back" },
   { name: "Seated Cable Row", muscleGroup: "back" },
   { name: "Face Pull", muscleGroup: "back" },
+  { name: "T-Bar Row", muscleGroup: "back" },
+  { name: "T-Bar Row Machine", muscleGroup: "back" },
+  { name: "Plate Loaded Row", muscleGroup: "back" },
+  { name: "Plate Loaded Lat Pulldown", muscleGroup: "back" },
   // Shoulders
   { name: "Overhead Press", muscleGroup: "shoulders" },
   { name: "Seated Dumbbell Shoulder Press", muscleGroup: "shoulders" },
   { name: "Arnold Press", muscleGroup: "shoulders" },
   { name: "Lateral Raise", muscleGroup: "shoulders" },
   { name: "Rear Delt Fly", muscleGroup: "shoulders" },
+  { name: "Cable Lateral Raise", muscleGroup: "shoulders" },
+  { name: "Machine Rear Delt Fly", muscleGroup: "shoulders" },
   { name: "Upright Row", muscleGroup: "shoulders" },
   // Biceps
   { name: "Barbell Curl", muscleGroup: "biceps" },
@@ -51,6 +57,7 @@ export const GLOBAL_EXERCISES = [
   // Triceps
   { name: "Close-Grip Bench Press", muscleGroup: "triceps" },
   { name: "Triceps Pushdown", muscleGroup: "triceps" },
+  { name: "Overhead Cable Triceps Extension", muscleGroup: "triceps" },
   { name: "Overhead Triceps Extension", muscleGroup: "triceps" },
   { name: "Skull Crusher", muscleGroup: "triceps" },
   // Forearms
@@ -64,6 +71,7 @@ export const GLOBAL_EXERCISES = [
   { name: "Walking Lunge", muscleGroup: "quads" },
   { name: "Leg Extension", muscleGroup: "quads" },
   { name: "Hack Squat", muscleGroup: "quads" },
+  { name: "Sissy Squat", muscleGroup: "quads" },
   // Hamstrings
   { name: "Romanian Deadlift", muscleGroup: "hamstrings" },
   { name: "Stiff-Leg Deadlift", muscleGroup: "hamstrings" },
@@ -83,6 +91,9 @@ export const GLOBAL_EXERCISES = [
   { name: "Cable Crunch", muscleGroup: "core" },
   { name: "Ab Wheel Rollout", muscleGroup: "core" },
   { name: "Russian Twist", muscleGroup: "core" },
+  { name: "Sit-Up", muscleGroup: "core" },
+  { name: "Lying Leg Raise", muscleGroup: "core" },
+  { name: "Dumbbell Side Bend", muscleGroup: "core" },
   // Full body
   { name: "Power Clean", muscleGroup: "full_body" },
   { name: "Clean and Jerk", muscleGroup: "full_body" },

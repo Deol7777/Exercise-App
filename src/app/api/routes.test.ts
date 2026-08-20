@@ -16,6 +16,7 @@ import { createUser, globalExercise } from "@/test/factories";
 vi.mock("@/server/auth", () => ({ currentUserId: vi.fn() }));
 
 import { currentUserId } from "@/server/auth";
+import { GLOBAL_EXERCISES } from "@/server/db/seed-data";
 
 import { GET as getExercises, POST as postExercise } from "./exercises/route";
 import { GET as getSessions, POST as postSession } from "./workout-sessions/route";
@@ -380,7 +381,7 @@ describe("the catalog over HTTP", () => {
     signedInAs(await createUser());
 
     const all = await getExercises(new NextRequest("http://localhost/api/exercises"));
-    expect(((await all.json()) as unknown[]).length).toBe(60);
+    expect(((await all.json()) as unknown[]).length).toBe(GLOBAL_EXERCISES.length);
 
     const filtered = await getExercises(
       new NextRequest("http://localhost/api/exercises?search=squat"),

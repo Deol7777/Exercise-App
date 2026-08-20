@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { db } from "../db";
 import { exercises, sets, signInAttempts, workoutSessions } from "../db/schema";
+import { GLOBAL_EXERCISES } from "../db/seed-data";
 import { createCustomExercise } from "./exercises";
 import { addExerciseEntry, logSet, startWorkoutSession } from "./training";
 import {
@@ -246,7 +247,7 @@ describe("deleting an account", () => {
       .from(exercises)
       .where(sql`${exercises.ownerId} is null`);
 
-    expect(globalCount).toBe(60);
+    expect(globalCount).toBe(GLOBAL_EXERCISES.length);
     expect(await getWeightUnit(staying.id)).toBe("kg");
     expect((await db.select().from(exercises).where(eq(exercises.id, kept.id))).length).toBe(1);
     expect(

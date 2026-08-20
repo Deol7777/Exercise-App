@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { createUser } from "@/test/factories";
 
+import { GLOBAL_EXERCISES } from "../db/seed-data";
 import { DomainError } from "../errors";
 import { createCustomExercise, getExercise, listExercises } from "./exercises";
 
@@ -14,7 +15,7 @@ describe("the catalog", () => {
     const userId = await createUser();
     const catalog = await listExercises(userId);
 
-    expect(catalog).toHaveLength(60);
+    expect(catalog).toHaveLength(GLOBAL_EXERCISES.length);
     expect(catalog.every((exercise) => !exercise.isCustom)).toBe(true);
     /** Alphabetical, so a picker does not need to sort. */
     expect(catalog.map((exercise) => exercise.name)).toEqual(
@@ -32,11 +33,11 @@ describe("the catalog", () => {
     });
 
     const ownerCatalog = await listExercises(owner);
-    expect(ownerCatalog).toHaveLength(61);
+    expect(ownerCatalog).toHaveLength(GLOBAL_EXERCISES.length + 1);
     expect(ownerCatalog.find((exercise) => exercise.id === custom.id)?.isCustom).toBe(true);
 
     const strangerCatalog = await listExercises(stranger);
-    expect(strangerCatalog).toHaveLength(60);
+    expect(strangerCatalog).toHaveLength(GLOBAL_EXERCISES.length);
     expect(strangerCatalog.some((exercise) => exercise.id === custom.id)).toBe(false);
   });
 
