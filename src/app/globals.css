@@ -4,12 +4,43 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * The design language: the layout, type and card grammar come from
+ * references/image*.png; the colour comes from references/color.png, the
+ * "Evening rose" palette.
+ *
+ * That palette gives four hues and nothing else, so the neutrals here are
+ * derived from them rather than picked fresh — the ground, the card and the
+ * hairline are all the blush hue at very low chroma, which is what stops the
+ * accents from looking stuck onto a grey app.
+ *
+ *   #4A4A4A  primary    the pill button, the bar chart, the active tab
+ *   #8E4585  brand      confirmation and progress: COMPLETE SET, a PR, a line
+ *   #996666  rose       decorative rose: wells, thumbnails, secondary series
+ *   #DCA1A1  blush      tints and fills; the ground and hairline descend from it
+ *
+ * shadcn's token names are kept and repointed rather than replaced, so the
+ * components already in src/components/ui/ inherit the palette for free.
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Not shadcn tokens; ours. Named for the role, not the hue, so swapping the
+     palette again does not mean renaming every usage. */
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-tint: var(--brand-tint);
+  --color-rose: var(--rose);
+  --color-blush: var(--blush);
+  --color-faint: var(--faint);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +70,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -46,85 +78,163 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* The card radius in the references is a flat 28px, not a scale step. */
+  --radius-surface: var(--surface-radius);
+
+  /* Uppercase micro-labels are a signature of the design; the tracking is not
+     optional decoration, it is what keeps them legible at 11px. */
+  --tracking-label: 0.14em;
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Blush at 1% chroma (#F7F1F1). Never pure white, or the cards vanish. */
+  --background: oklch(0.9628 0.0065 17.3);
+  --foreground: oklch(0.2926 0.0047 355);
+
+  /* Cards sit *above* the ground: a hair warmer than white (#FDFBFB). */
+  --card: oklch(0.9896 0.0021 17.2);
+  --card-foreground: oklch(0.2926 0.0047 355);
+  --popover: oklch(0.9896 0.0021 17.2);
+  --popover-foreground: oklch(0.2926 0.0047 355);
+
+  /* #4A4A4A. White on it is 8.6:1. */
+  --primary: oklch(0.4091 0 89.9);
+  --primary-foreground: oklch(0.9896 0.0021 17.2);
+
+  /* #8E4585 — confirmation and progress only: COMPLETE SET, a PR delta, the
+     trend line, the active tab dot. It never carries plain navigation, or it
+     stops meaning "that worked". White on it is 6.1:1; on the ground, 5.6:1. */
+  --brand: oklch(0.5055 0.1291 332.1);
+  --brand-foreground: oklch(0.9896 0.0021 17.2);
+  --brand-deep: oklch(0.4494 0.1197 332.1);
+  --brand-tint: oklch(0.9424 0.0221 332);
+
+  /* #996666 and #DCA1A1 — decorative rose. Note `rose` is 4.23:1 on the ground,
+     which is *under* AA for the 11px labels, so it is never body or label text;
+     `--muted-foreground` below is the darkened sibling that is. */
+  --rose: oklch(0.5644 0.0662 19.3);
+  --blush: oklch(0.7648 0.0704 18.8);
+
+  /* Chips, inactive filter pills, the inset panels behind the steppers. */
+  --secondary: oklch(0.9389 0.0109 17.4);
+  --secondary-foreground: oklch(0.4091 0 89.9);
+  --muted: oklch(0.9389 0.0109 17.4);
+  /* #7D5252 — the label colour. Rose enough to read as the family, dark enough
+     to pass AA at 11px (5.88:1). */
+  --muted-foreground: oklch(0.4861 0.058 19.4);
+  --accent: oklch(0.9389 0.0109 17.4);
+  --accent-foreground: oklch(0.4091 0 89.9);
+  /* Decorative only — 2.7:1. Never text a person has to read; use `muted`. */
+  --faint: oklch(0.669 0.0339 18);
+
+  --destructive: oklch(0.5438 0.1431 28.9);
+
+  /* One hairline (#EADCDC), for card edges, separators and outline buttons. */
+  --border: oklch(0.9057 0.0154 17.4);
+  --input: oklch(0.9057 0.0154 17.4);
+  --ring: oklch(0.5055 0.1291 332.1);
+
+  /* Charts read as one family: plum for the tracked line, #4A4A4A for bars. */
+  --chart-1: oklch(0.5055 0.1291 332.1);
+  --chart-2: oklch(0.4091 0 89.9);
+  --chart-3: oklch(0.5644 0.0662 19.3);
+  --chart-4: oklch(0.7648 0.0704 18.8);
+  --chart-5: oklch(0.4861 0.058 19.4);
+
+  --radius: 1rem;
+  --surface-radius: 1.75rem;
+
+  --sidebar: oklch(0.9896 0.0021 17.2);
+  --sidebar-foreground: oklch(0.2926 0.0047 355);
+  --sidebar-primary: oklch(0.4091 0 89.9);
+  --sidebar-primary-foreground: oklch(0.9896 0.0021 17.2);
+  --sidebar-accent: oklch(0.9389 0.0109 17.4);
+  --sidebar-accent-foreground: oklch(0.4091 0 89.9);
+  --sidebar-border: oklch(0.9057 0.0154 17.4);
+  --sidebar-ring: oklch(0.5055 0.1291 332.1);
 }
 
+/*
+ * The references are light-only. This block exists so a user with the class set
+ * gets a coherent dark rose rather than shadcn's neutral greys — it is not a
+ * designed surface yet, and no screen has been reviewed in it.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.21 0.008 355);
+  --foreground: oklch(0.955 0.005 17);
+  --card: oklch(0.265 0.009 356);
+  --card-foreground: oklch(0.955 0.005 17);
+  --popover: oklch(0.265 0.009 356);
+  --popover-foreground: oklch(0.955 0.005 17);
+  --primary: oklch(0.955 0.005 17);
+  --primary-foreground: oklch(0.265 0.009 356);
+  --brand: oklch(0.68 0.132 332.1);
+  --brand-foreground: oklch(0.21 0.008 355);
+  --brand-deep: oklch(0.6 0.125 332.1);
+  --brand-tint: oklch(0.33 0.045 332);
+  --rose: oklch(0.68 0.068 19.3);
+  --blush: oklch(0.7648 0.0704 18.8);
+  --secondary: oklch(0.325 0.012 17.4);
+  --secondary-foreground: oklch(0.955 0.005 17);
+  --muted: oklch(0.325 0.012 17.4);
+  --muted-foreground: oklch(0.76 0.035 19.4);
+  --accent: oklch(0.325 0.012 17.4);
+  --accent-foreground: oklch(0.955 0.005 17);
+  --faint: oklch(0.6 0.03 18);
+  --destructive: oklch(0.68 0.16 27);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.68 0.132 332.1);
+  --chart-1: oklch(0.68 0.132 332.1);
+  --chart-2: oklch(0.86 0.005 17);
+  --chart-3: oklch(0.68 0.068 19.3);
+  --chart-4: oklch(0.7648 0.0704 18.8);
+  --chart-5: oklch(0.76 0.035 19.4);
+  --sidebar: oklch(0.265 0.009 356);
+  --sidebar-foreground: oklch(0.955 0.005 17);
+  --sidebar-primary: oklch(0.955 0.005 17);
+  --sidebar-primary-foreground: oklch(0.265 0.009 356);
+  --sidebar-accent: oklch(0.325 0.012 17.4);
+  --sidebar-accent-foreground: oklch(0.955 0.005 17);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.68 0.132 332.1);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    /* The tab bar is fixed; every screen reserves its height plus the home
+       indicator so the last card is never trapped underneath it. */
+    --tab-bar-height: 4.5rem;
+    -webkit-font-smoothing: antialiased;
   }
-  html {
-    @apply font-sans;
+
+  /* Headings are the display face by default — the references never set a
+     heavy weight on body prose, and never a light weight on a heading. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
   }
+
+  /* Steppers and set rows are tapped repeatedly and fast; a text selection
+     flashing up mid-set is noise, not feedback. */
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@utility label-caps {
+  /* The uppercase micro-label: TODAY, EXERCISES, THIS WEEK, WEIGHT (LB). */
+  @apply text-[0.6875rem] font-medium text-muted-foreground uppercase;
+  letter-spacing: var(--tracking-label);
+}
+
+@utility tabular {
+  /* Weights and reps change in place under a stepper; they must not reflow. */
+  font-variant-numeric: tabular-nums;
 }

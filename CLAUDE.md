@@ -16,7 +16,7 @@ not `app/**`.
 
 The full schema — Auth.js tables plus `exercises`, `workout_sessions`,
 `session_exercises`, `sets` — is migrated onto a Neon project (`exercise-app`,
-aws-us-west-2), and the global exercise catalog is seeded (60 rows).
+aws-us-west-2), and the global exercise catalog is seeded (71 rows).
 
 **The authentication slice is built**: email/password registration and sign-in
 on Auth.js v5 with a `jwt` session strategy, `POST /api/users`, the Auth.js

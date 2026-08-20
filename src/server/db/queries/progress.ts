@@ -9,7 +9,7 @@
  * Warm-up sets are excluded from every statistic — that is what
  * `is_warmup = false` means (docs/glossary.md, "working set").
  */
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
@@ -167,4 +167,170 @@ export async function findWeeklyVolume(
     .orderBy(desc(weekMs), exercises.muscleGroup);
 
   return rows.map(({ weekMs: ms, ...rest }) => ({ ...rest, week: new Date(ms) }));
+}
+
+export type WeekTotals = {
+  /**
+   * Monday 00:00 in the database's timezone, which on Neon is UTC — the same
+   * cut `findWeeklyVolume` uses, so "this week" means one thing across the app.
+   */
+  weekStart: Date;
+  workouts: number;
+  /** Sum of reps × weight over working sets, kilograms. */
+  volume: number;
+  setCount: number;
+};
+
+export type SessionTotals = {
+  id: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  exerciseCount: number;
+  setCount: number;
+  /** Kilograms. */
+  volume: number;
+  /** The heaviest working set of the session, or null if it held only warm-ups. */
+  topSet: { weight: number; reps: number } | null;
+};
+
+/** `date_trunc('week', …)` is ISO — weeks start on Monday. */
+const thisWeek = sql`date_trunc('week', now())`;
+
+/**
+ * The home screen's "this week" band. Two statements rather than one because
+ * the counts are at different grains: joining sessions to sets to get volume
+ * would multiply the session count by the number of sets in each.
+ */
+export async function findWeekTotals(userId: string): Promise<WeekTotals> {
+  const weekStartMs = sql<number>`(extract(epoch from ${thisWeek}) * 1000)::float8`;
+
+  const [sessionSide, setSide] = await Promise.all([
+    db
+      .select({
+        /** A constant expression, so it needs no `group by` beside the count. */
+        weekStartMs: weekStartMs.as("week_start_ms"),
+        workouts: sql<number>`count(*)::int`,
+      })
+      .from(workoutSessions)
+      .where(and(eq(workoutSessions.userId, userId), gte(workoutSessions.startedAt, thisWeek))),
+    db
+      .select({
+        volume: sql<number>`coalesce(sum(${sets.reps} * ${sets.weight}), 0)::float8`,
+        setCount: sql<number>`count(${sets.id})::int`,
+      })
+      .from(sets)
+      .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+      .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
+      .where(and(workingSetsOf(userId), gte(workoutSessions.startedAt, thisWeek))),
+  ]);
+
+  return {
+    weekStart: new Date(sessionSide[0].weekStartMs),
+    workouts: sessionSide[0].workouts,
+    volume: setSide[0].volume,
+    setCount: setSide[0].setCount,
+  };
+}
+
+/** Midnight in the database's timezone (UTC), the same cut `thisWeek` uses. */
+const today = sql`date_trunc('day', now())`;
+
+/**
+ * One session, totalled. Split out because "today's workout" and "the last one
+ * before today" differ only in how the row is chosen, and totalling them two
+ * ways is how the same session ends up with two different set counts.
+ */
+async function totalsFor(session: {
+  id: string;
+  startedAt: Date;
+  endedAt: Date | null;
+}): Promise<SessionTotals> {
+  const [totals, top] = await Promise.all([
+    /**
+     * The warm-up filter sits in the join, not the `where`: as a `where` it
+     * would drop an exercise that was only warmed up, and that exercise still
+     * happened — it just contributed no volume.
+     */
+    db
+      .select({
+        exerciseCount: sql<number>`count(distinct ${sessionExercises.id})::int`,
+        setCount: sql<number>`count(${sets.id})::int`,
+        volume: sql<number>`coalesce(sum(${sets.reps} * ${sets.weight}), 0)::float8`,
+      })
+      .from(sessionExercises)
+      .leftJoin(
+        sets,
+        and(eq(sets.sessionExerciseId, sessionExercises.id), eq(sets.isWarmup, false)),
+      )
+      .where(eq(sessionExercises.workoutSessionId, session.id)),
+    db
+      .select({ weight: sets.weight, reps: sets.reps })
+      .from(sets)
+      .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+      .where(and(eq(sessionExercises.workoutSessionId, session.id), eq(sets.isWarmup, false)))
+      .orderBy(desc(sets.weight), desc(sets.reps))
+      .limit(1),
+  ]);
+
+  return {
+    ...session,
+    exerciseCount: totals[0].exerciseCount,
+    setCount: totals[0].setCount,
+    volume: totals[0].volume,
+    topSet: top[0] ? { weight: Number(top[0].weight), reps: top[0].reps } : null,
+  };
+}
+
+const sessionRow = {
+  id: workoutSessions.id,
+  startedAt: workoutSessions.startedAt,
+  endedAt: workoutSessions.endedAt,
+};
+
+/**
+ * Today's workout, whether it is still running or already done — the home
+ * screen's "Today" card is filled by having trained, not by having finished.
+ *
+ * The day is cut in the database's timezone, which is UTC. For a user far
+ * enough west, a late-evening workout is already "tomorrow" by that cut and
+ * drops off the card. Weeks are cut the same way (`findWeekTotals`), so the two
+ * at least agree with each other; fixing it properly means knowing the user's
+ * timezone, which nothing stores yet.
+ */
+export async function findTodaySession(userId: string): Promise<SessionTotals | null> {
+  const [session] = await db
+    .select(sessionRow)
+    .from(workoutSessions)
+    .where(and(eq(workoutSessions.userId, userId), gte(workoutSessions.startedAt, today)))
+    .orderBy(desc(workoutSessions.startedAt))
+    .limit(1);
+
+  return session ? totalsFor(session) : null;
+}
+
+/**
+ * The most recent finished session, totalled.
+ *
+ * `excludeToday` is what keeps the home screen from showing one workout twice:
+ * today's session is already the card at the top, and repeating it under
+ * "recent" reads as two separate workouts.
+ */
+export async function findLatestFinishedSession(
+  userId: string,
+  options: { excludeToday?: boolean } = {},
+): Promise<SessionTotals | null> {
+  const [session] = await db
+    .select(sessionRow)
+    .from(workoutSessions)
+    .where(
+      and(
+        eq(workoutSessions.userId, userId),
+        isNotNull(workoutSessions.endedAt),
+        options.excludeToday ? lt(workoutSessions.startedAt, today) : undefined,
+      ),
+    )
+    .orderBy(desc(workoutSessions.startedAt))
+    .limit(1);
+
+  return session ? totalsFor(session) : null;
 }

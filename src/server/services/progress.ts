@@ -7,15 +7,20 @@
  */
 import {
   findLastPerformance,
+  findLatestFinishedSession,
   findPersonalRecords,
+  findTodaySession,
+  findWeekTotals,
   findWeeklyVolume,
   type LastPerformance,
   type PersonalRecord,
+  type SessionTotals,
+  type WeekTotals,
   type WeeklyVolumePoint,
 } from "../db/queries/progress";
 import { getExercise } from "./exercises";
 
-export type { LastPerformance, PersonalRecord, WeeklyVolumePoint };
+export type { LastPerformance, PersonalRecord, SessionTotals, WeekTotals, WeeklyVolumePoint };
 
 /** Bounded so a hand-written query string cannot ask for an unbounded scan. */
 const MIN_WEEKS = 1;
@@ -46,4 +51,45 @@ export function getWeeklyVolume(
 ): Promise<WeeklyVolumePoint[]> {
   const bounded = Math.min(Math.max(Math.trunc(weeks) || DEFAULT_WEEKS, MIN_WEEKS), MAX_WEEKS);
   return findWeeklyVolume(userId, bounded);
+}
+
+export type TrainingSummary = {
+  week: WeekTotals & {
+    /** Records whose best-ever set was set *this* week, not records held. */
+    personalRecords: number;
+  };
+  /** Today's workout, running or finished. Null until one has been started. */
+  today: SessionTotals | null;
+  /** The last finished workout *before* today, so today's is never shown twice. */
+  lastSession: SessionTotals | null;
+};
+
+/**
+ * The home screen in one call: how this week is going, and the last workout
+ * that finished.
+ *
+ * The record count is derived rather than queried. `findPersonalRecords`
+ * already returns each exercise's best-ever working set and when it happened,
+ * so a record "set this week" is one whose `achievedAt` falls inside the week —
+ * asking the database the same question a second way would be a second
+ * definition of a record, and they would drift.
+ */
+export async function getTrainingSummary(userId: string): Promise<TrainingSummary> {
+  const [week, today, lastSession, records] = await Promise.all([
+    findWeekTotals(userId),
+    findTodaySession(userId),
+    findLatestFinishedSession(userId, { excludeToday: true }),
+    findPersonalRecords(userId),
+  ]);
+
+  return {
+    week: {
+      ...week,
+      personalRecords: records.filter(
+        (record) => record.achievedAt.getTime() >= week.weekStart.getTime(),
+      ).length,
+    },
+    today,
+    lastSession,
+  };
 }

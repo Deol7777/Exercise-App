@@ -1,3 +1,4 @@
+import { TabBar } from "@/components/nav/tab-bar";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,8 @@ export default async function ProgressPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6">
+    <>
+      <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6 pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom)+1.5rem)]">
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Progress</h1>
         <nav className="flex gap-1">
@@ -118,5 +120,8 @@ export default async function ProgressPage() {
         </CardContent>
       </Card>
     </main>
+      {/* Until this screen moves onto `Screen`, which renders the bar itself. */}
+      <TabBar />
+    </>
   );
 }

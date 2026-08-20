@@ -30,10 +30,11 @@ built and running against the live database.
 | Area | State |
 | --- | --- |
 | Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
-| Exercise catalog | Seeded, 60 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
+| Exercise catalog | Seeded, 71 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out, account deletion. Auth.js v5, `jwt` session strategy. Sign-in is throttled to ten failures per email per fifteen minutes (ADR 0015). `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
 | Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/history`, `/history/[id]`, `/progress`. |
+| Exercise marks | `src/components/ui/exercise-icon.tsx` draws a line mark per movement, matched on the catalog name; all 71 global exercises have one, and anything unmatched (a custom exercise) falls back to the mascot. Used by the logging card and the stepper screen. |
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
