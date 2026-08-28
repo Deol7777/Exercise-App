@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 
+import { THEMES } from "../theme";
 import { WEIGHT_UNITS } from "../weight";
 
 /**
@@ -31,10 +32,20 @@ export const registerSchema = z.object({
   name: z.string().trim().max(120).optional(),
 });
 
-/** The signed-in user's own settings. The id is never in the body — it is the session's. */
-export const updateAccountSchema = z.object({
-  weightUnit: z.enum(WEIGHT_UNITS),
-});
+/**
+ * The signed-in user's own settings. The id is never in the body — it is the
+ * session's.
+ *
+ * Both fields are optional because Settings changes one control at a time, but
+ * an empty body is refused: it would reach the data access layer as an
+ * `update ... set` with nothing in it.
+ */
+export const updateAccountSchema = z
+  .object({
+    weightUnit: z.enum(WEIGHT_UNITS).optional(),
+    theme: z.enum(THEMES).optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, "Name at least one setting to change.");
 
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type SignInInput = z.infer<typeof signInSchema>;

@@ -13,9 +13,13 @@ import { createCustomExercise } from "./exercises";
 import { addExerciseEntry, logSet, startWorkoutSession } from "./training";
 import {
   deleteAccount,
+  getPreferences,
+  getTheme,
   getWeightUnit,
   registerUser,
+  setTheme,
   setWeightUnit,
+  updatePreferences,
   verifyCredentials,
 } from "./users";
 
@@ -105,6 +109,56 @@ describe("the display unit", () => {
     await expect(
       setWeightUnit("00000000-0000-4000-8000-000000000000", "lb"),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("the theme", () => {
+  it("is the designed palette until it is changed", async () => {
+    const user = await registerUser({ email: "theme@example.test", password });
+
+    expect(await getTheme(user.id)).toBe("rose");
+  });
+
+  it("changes, and stays changed", async () => {
+    const user = await registerUser({ email: "court@example.test", password });
+
+    expect(await setTheme(user.id, "court")).toBe("court");
+    expect(await getTheme(user.id)).toBe("court");
+  });
+
+  /** The two preferences are one row; changing either must not reset the other. */
+  it("is independent of the display unit", async () => {
+    const user = await registerUser({ email: "both@example.test", password });
+
+    await setWeightUnit(user.id, "lb");
+    await setTheme(user.id, "forest");
+
+    expect(await getPreferences(user.id)).toEqual({ weightUnit: "lb", theme: "forest" });
+  });
+
+  it("changes both at once, and answers with the whole set", async () => {
+    const user = await registerUser({ email: "atonce@example.test", password });
+
+    expect(await updatePreferences(user.id, { weightUnit: "lb", theme: "ink" })).toEqual({
+      weightUnit: "lb",
+      theme: "ink",
+    });
+  });
+
+  /** An empty patch is a read, not an `update ... set` with nothing in it. */
+  it("reads back unchanged when the patch is empty", async () => {
+    const user = await registerUser({ email: "nopatch@example.test", password });
+
+    expect(await updatePreferences(user.id, {})).toEqual({ weightUnit: "kg", theme: "rose" });
+  });
+
+  it("is not_found for an account that does not exist", async () => {
+    await expect(getTheme("00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(setTheme("00000000-0000-4000-8000-000000000000", "ink")).rejects.toMatchObject({
+      code: "not_found",
+    });
   });
 });
 

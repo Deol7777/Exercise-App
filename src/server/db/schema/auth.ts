@@ -10,6 +10,7 @@
  */
 import { integer, pgEnum, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
+import { THEMES } from "../../../lib/theme";
 import { WEIGHT_UNITS } from "../../../lib/weight";
 
 /**
@@ -18,6 +19,13 @@ import { WEIGHT_UNITS } from "../../../lib/weight";
  * converted from.
  */
 export const weightUnit = pgEnum("weight_unit", WEIGHT_UNITS);
+
+/**
+ * The colour palette the app is drawn in. Presentation only, like the unit
+ * above: the values live in src/lib/theme.ts because the settings control and
+ * the layout both need them, and this is only the database's view of the list.
+ */
+export const theme = pgEnum("theme", THEMES);
 
 export const users = pgTable("users", {
   id: text("id")
@@ -33,6 +41,7 @@ export const users = pgTable("users", {
    */
   passwordHash: text("password_hash"),
   weightUnit: weightUnit("weight_unit").notNull().default("kg"),
+  theme: theme("theme").notNull().default("rose"),
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
 });
 

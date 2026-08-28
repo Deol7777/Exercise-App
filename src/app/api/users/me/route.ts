@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 
 import { updateAccountSchema } from "@/lib/validation/auth";
 import { currentUserId } from "@/server/auth";
-import { deleteAccount, getWeightUnit, setWeightUnit } from "@/server/services/users";
+import { deleteAccount, getPreferences, updatePreferences } from "@/server/services/users";
 
 import { fromError, invalidBody, unauthenticated } from "../../_lib/respond";
 
@@ -17,7 +17,7 @@ export async function GET() {
   if (!userId) return unauthenticated();
 
   try {
-    return NextResponse.json({ weightUnit: await getWeightUnit(userId) });
+    return NextResponse.json(await getPreferences(userId));
   } catch (error) {
     return fromError(error);
   }
@@ -31,7 +31,8 @@ export async function PATCH(request: Request) {
   if (!parsed.success) return invalidBody(parsed.error);
 
   try {
-    return NextResponse.json({ weightUnit: await setWeightUnit(userId, parsed.data.weightUnit) });
+    /** Answers with the whole set, so a body that named one setting still leaves the client consistent. */
+    return NextResponse.json(await updatePreferences(userId, parsed.data));
   } catch (error) {
     return fromError(error);
   }

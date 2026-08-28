@@ -1,5 +1,6 @@
 import { requireAccount } from "@/app/_lib/require-account";
 import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
+import { ThemeSelect } from "@/components/account/theme-select";
 import { WeightUnitSelect } from "@/components/account/weight-unit-select";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
@@ -12,7 +13,7 @@ import { auth } from "@/server/auth";
  * show — so they moved here, reached from the gear in the home header.
  */
 export default async function SettingsPage() {
-  const { unit } = await requireAccount();
+  const { unit, theme } = await requireAccount();
   const session = await auth();
   const email = session?.user?.email ?? null;
 
@@ -21,9 +22,15 @@ export default async function SettingsPage() {
       <ScreenHeader eyebrow="Account" title="Settings" />
 
       <SectionHeader label="Display" />
-      <Surface className="flex flex-col gap-3">
-        <span className="text-sm text-muted-foreground">Show weights in</span>
-        <WeightUnitSelect unit={unit} />
+      <Surface className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3">
+          <span className="text-sm text-muted-foreground">Show weights in</span>
+          <WeightUnitSelect unit={unit} />
+        </div>
+        <div className="flex flex-col gap-3">
+          <span className="text-sm text-muted-foreground">Colour theme</span>
+          <ThemeSelect theme={theme} />
+        </div>
       </Surface>
 
       <SectionHeader label="Account" className="mt-8" />

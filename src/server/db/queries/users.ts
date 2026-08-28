@@ -4,6 +4,7 @@
  */
 import { eq, sql } from "drizzle-orm";
 
+import type { Theme } from "@/lib/theme";
 import type { WeightUnit } from "@/lib/weight";
 
 import { db } from "..";
@@ -47,27 +48,41 @@ export async function insertUser(input: {
   return row;
 }
 
-export async function findWeightUnit(userId: string): Promise<WeightUnit | null> {
+/** Everything about a user that is presentation and not identity. */
+export type Preferences = { weightUnit: WeightUnit; theme: Theme };
+
+/**
+ * One row read, not one per preference: a signed-in page needs the unit and
+ * the theme on the same render (src/app/_lib/require-account.ts), and asking
+ * twice would put two round trips in front of every screen.
+ */
+export async function findPreferences(userId: string): Promise<Preferences | null> {
   const [row] = await db
-    .select({ weightUnit: users.weightUnit })
+    .select({ weightUnit: users.weightUnit, theme: users.theme })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
-  return row?.weightUnit ?? null;
+  return row ?? null;
 }
 
-export async function updateWeightUnit(
+/**
+ * Writes whatever the patch names and returns the whole set. An empty patch
+ * would be an `update ... set` with nothing in it, which Drizzle refuses, so
+ * the caller is responsible for not sending one — the Zod schema at the
+ * handler edge is where that is enforced.
+ */
+export async function updatePreferences(
   userId: string,
-  weightUnit: WeightUnit,
-): Promise<WeightUnit | null> {
+  patch: Partial<Preferences>,
+): Promise<Preferences | null> {
   const [row] = await db
     .update(users)
-    .set({ weightUnit })
+    .set(patch)
     .where(eq(users.id, userId))
-    .returning({ weightUnit: users.weightUnit });
+    .returning({ weightUnit: users.weightUnit, theme: users.theme });
 
-  return row?.weightUnit ?? null;
+  return row ?? null;
 }
 
 /**

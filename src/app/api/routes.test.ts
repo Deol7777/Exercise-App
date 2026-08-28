@@ -331,14 +331,24 @@ describe("the account endpoint", () => {
     signedInAs(await createUser());
 
     const before = await getMe();
-    expect(await before.json()).toEqual({ weightUnit: "kg" });
+    expect(await before.json()).toEqual({ weightUnit: "kg", theme: "rose" });
 
     const changed = await patchMe(json("/api/users/me", "PATCH", { weightUnit: "lb" }));
     expect(changed.status).toBe(200);
-    expect(await changed.json()).toEqual({ weightUnit: "lb" });
+    expect(await changed.json()).toEqual({ weightUnit: "lb", theme: "rose" });
 
     const after = await getMe();
-    expect(await after.json()).toEqual({ weightUnit: "lb" });
+    expect(await after.json()).toEqual({ weightUnit: "lb", theme: "rose" });
+  });
+
+  /** A body that names one setting leaves the other alone and still answers with both. */
+  it("changes the theme without touching the unit", async () => {
+    signedInAs(await createUser());
+    await patchMe(json("/api/users/me", "PATCH", { weightUnit: "lb" }));
+
+    const changed = await patchMe(json("/api/users/me", "PATCH", { theme: "court" }));
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toEqual({ weightUnit: "lb", theme: "court" });
   });
 
   it("answers 401 without a session and 422 for a unit that does not exist", async () => {
@@ -349,6 +359,13 @@ describe("the account endpoint", () => {
     signedInAs(await createUser());
     const bad = await patchMe(json("/api/users/me", "PATCH", { weightUnit: "stone" }));
     expect(bad.status).toBe(422);
+
+    const noSuchTheme = await patchMe(json("/api/users/me", "PATCH", { theme: "chartreuse" }));
+    expect(noSuchTheme.status).toBe(422);
+
+    /** Nothing to change is a bad request, not a no-op write. */
+    const nothing = await patchMe(json("/api/users/me", "PATCH", {}));
+    expect(nothing.status).toBe(422);
   });
 });
 

@@ -6,6 +6,7 @@
  */
 import { compare, hash } from "bcryptjs";
 
+import type { Theme } from "@/lib/theme";
 import type { WeightUnit } from "@/lib/weight";
 
 import {
@@ -16,10 +17,11 @@ import {
 } from "../db/queries/sign-in-attempts";
 import {
   deleteAccount as deleteAccountRows,
+  findPreferences,
   findUserByEmail,
-  findWeightUnit,
   insertUser,
-  updateWeightUnit,
+  type Preferences,
+  updatePreferences as updatePreferenceRows,
 } from "../db/queries/users";
 import { isUniqueViolation } from "../db/pg-errors";
 import { ConflictError, NotFoundError } from "../errors";
@@ -125,20 +127,53 @@ export async function verifyCredentials(input: {
   return { id: user.id, email: user.email, name: user.name };
 }
 
+export type { Preferences };
+
+/**
+ * How the app is drawn for this user: the display unit and the palette.
+ * Both have defaults in the database, so a user who has never opened Settings
+ * still has a full set — but a missing *user* is an error.
+ */
+export async function getPreferences(userId: string): Promise<Preferences> {
+  const preferences = await findPreferences(userId);
+  if (!preferences) throw new NotFoundError("That account does not exist.");
+  return preferences;
+}
+
+/**
+ * Changes one or both preferences and answers with the whole set, so a caller
+ * that sent half of it does not have to read the other half back.
+ */
+export async function updatePreferences(
+  userId: string,
+  patch: Partial<Preferences>,
+): Promise<Preferences> {
+  if (Object.keys(patch).length === 0) return getPreferences(userId);
+
+  const updated = await updatePreferenceRows(userId, patch);
+  if (!updated) throw new NotFoundError("That account does not exist.");
+  return updated;
+}
+
 /**
  * The user's display unit. Kilograms is the default and the stored unit, so a
  * missing preference is not an error — but a missing *user* is.
  */
 export async function getWeightUnit(userId: string): Promise<WeightUnit> {
-  const unit = await findWeightUnit(userId);
-  if (!unit) throw new NotFoundError("That account does not exist.");
-  return unit;
+  return (await getPreferences(userId)).weightUnit;
 }
 
 export async function setWeightUnit(userId: string, weightUnit: WeightUnit): Promise<WeightUnit> {
-  const updated = await updateWeightUnit(userId, weightUnit);
-  if (!updated) throw new NotFoundError("That account does not exist.");
-  return updated;
+  return (await updatePreferences(userId, { weightUnit })).weightUnit;
+}
+
+/** The palette. Nothing but presentation: no stored training data changes with it. */
+export async function getTheme(userId: string): Promise<Theme> {
+  return (await getPreferences(userId)).theme;
+}
+
+export async function setTheme(userId: string, theme: Theme): Promise<Theme> {
+  return (await updatePreferences(userId, { theme })).theme;
 }
 
 /**

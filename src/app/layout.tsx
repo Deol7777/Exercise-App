@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree, Geist_Mono, Work_Sans } from "next/font/google";
+
+import { THEME_META } from "@/lib/theme";
+
+import { currentTheme } from "./_lib/theme";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -34,19 +38,41 @@ export const metadata: Metadata = {
 /**
  * Designed for the phone first. `viewportFit: "cover"` is what lets the tab bar
  * paint into the home-indicator area instead of leaving a white strip under it.
+ *
+ * `generateViewport` rather than a static `viewport` object because the theme
+ * colour is per-user: the status bar has to match the ground the page paints,
+ * or a dark theme shows a light seam above it. The two exports are mutually
+ * exclusive, so everything static lives in here too.
  */
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#F7F1F1",
-};
+export async function generateViewport(): Promise<Viewport> {
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    themeColor: THEME_META[await currentTheme()].themeColor,
+  };
+}
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/**
+ * Reading the theme here reads the session cookie, which makes every route
+ * request-rendered. Every screen already resolves a session of its own, so this
+ * costs a preference lookup, not a rendering strategy.
+ */
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const theme = await currentTheme();
+  const { dark } = THEME_META[theme];
+
   return (
     <html
       lang="en"
-      className={`${display.variable} ${body.variable} ${geistMono.variable} h-full antialiased`}
+      data-theme={theme}
+      /**
+       * The class is what shadcn's `dark:` utilities key on (the
+       * `@custom-variant` in globals.css); `colorScheme` is what makes the
+       * browser's own form controls and scrollbars follow the page.
+       */
+      className={`${display.variable} ${body.variable} ${geistMono.variable} h-full antialiased${dark ? " dark" : ""}`}
+      style={{ colorScheme: dark ? "dark" : "light" }}
     >
       <body className="min-h-full flex flex-col">
         <Providers>
