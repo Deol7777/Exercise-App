@@ -6,6 +6,7 @@ import { requireAccount } from "@/app/_lib/require-account";
 import { Screen } from "@/components/layout/screen";
 import { ExerciseStepper } from "@/components/training/exercise-stepper";
 import { Elapsed } from "@/components/training/elapsed";
+import { RestClock } from "@/components/training/rest-clock";
 import { ExerciseIcon } from "@/components/ui/exercise-icon";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
 import type { LoggedWorkoutSession } from "@/lib/types/training";
@@ -85,6 +86,8 @@ export default async function ExerciseEntryPage({
           className="pointer-events-none absolute right-0 -bottom-2 h-24 w-24"
         />
       </div>
+
+      <RestClock />
 
       <ExerciseStepper entryId={entry.id} unit={unit} session={wireSession} seed={seed} />
 
