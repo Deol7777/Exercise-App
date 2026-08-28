@@ -29,13 +29,14 @@ built and running against the live database.
 
 | Area | State |
 | --- | --- |
-| Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
+| Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari` and `users.theme` in `0003_complex_tomorrow_man`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
 | Exercise catalog | Seeded, 71 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out, account deletion. Auth.js v5, `jwt` session strategy. Sign-in is throttled to ten failures per email per fifteen minutes (ADR 0015). `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
 | Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/history`, `/history/[id]`, `/progress`. |
 | Exercise marks | `src/components/ui/exercise-icon.tsx` draws a line mark per movement, matched on the catalog name; all 71 global exercises have one, and anything unmatched (a custom exercise) falls back to the mascot. Used by the logging card and the stepper screen. |
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
+| Theming | Six colour themes (ADR 0017), stored on `users.theme` and applied by the root layout as `data-theme` on `<html>`. Every screen already reads role tokens, so a theme is a block of token values in `globals.css` and nothing else. Two are dark. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
 | Tests | Vitest against a local Postgres in Docker: 156 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
@@ -45,7 +46,7 @@ built and running against the live database.
 | Method and path | Does |
 | --- | --- |
 | `POST /api/users` | Register. The only route reachable without a session. |
-| `GET`/`PATCH /api/users/me` | The signed-in user's own settings — currently the display unit. No route takes a user id in its path. |
+| `GET`/`PATCH /api/users/me` | The signed-in user's own settings: display unit and theme. `PATCH` takes either or both and answers with the whole set; an empty body is a `422`. No route takes a user id in its path. |
 | `DELETE /api/users/me` | Delete the account and everything in it. Irreversible, one transaction. |
 | `/api/auth/[...nextauth]` | Auth.js: sign in, sign out, session. |
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
@@ -148,6 +149,10 @@ These are the lines that are expensive to uncross:
   file.
 - **Every request body is parsed by a Zod schema at the handler edge.** Handlers
   work with the parsed output, never with raw JSON.
+- **Colour is a role token, never a hex in a component.** Every surface reads
+  `--background`, `--card`, `--brand` and their siblings; a theme redefines
+  those and no selector below `:root` may name a component. A component that
+  hard-codes a colour is invisible to five of the six themes.
 - **Weight is kilograms in the database, always.** `users.weight_unit` is a
   *display* preference. Conversion lives in `src/lib/weight.ts` and is called
   from components only — never in a service, never in a query, and never on the
@@ -280,7 +285,18 @@ drizzle-kit migrations.
   install chromium` after a Playwright upgrade, or every spec fails on launch.
 - **Switching the display unit is fire-and-forget.** The select PATCHes and does
   not block; navigating in the same instant can abandon the write, and the
-  control will have already moved. The window is small and real.
+  control will have already moved. The window is small and real. Switching the
+  theme has the same window, and paints the new palette before the write lands.
+- **Two of the six themes have never been reviewed screen by screen.**
+  `rose-dark` is the old `.dark` block, which was derived rather than designed;
+  `court` was drawn against the home, log, stepper and settings screens only.
+  Their contrast ratios are recorded and pass, which is not the same as saying
+  they look right on `/progress` or `/history`.
+- **Reading the theme makes every route request-rendered.** The root layout
+  reads the session cookie to resolve `data-theme`, so nothing prerenders any
+  more — including `/sign-in` and `/sign-up`, which have nothing user-specific
+  on them. The cost is one preference read per request, shared with
+  `generateViewport` through React's `cache`.
 - **Tests run on Postgres 17 in Docker, not on Neon.** The pooler, scale-to-zero
   behaviour and any storage-layer difference are untested; a Neon-only bug still
   reaches production (ADR 0009).
