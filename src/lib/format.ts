@@ -4,7 +4,10 @@
  *
  * Weights are deliberately absent: they convert through src/lib/weight.ts,
  * because a kilogram becoming a pound is a unit decision, not a formatting one.
+ * Days are the same: which day an instant falls on comes from
+ * src/lib/time-zone.ts, because that is a clock decision, not a formatting one.
  */
+import { APP_TIME_ZONE, startOfZonedDay } from "./time-zone";
 
 /** Whole minutes between two instants, floored — 47 min, not 47.4. */
 export function minutesBetween(from: Date, to: Date): number {
@@ -28,25 +31,33 @@ export function formatDuration(minutes: number): string {
 
 /**
  * "Today", "Yesterday", then the weekday for the rest of the past week, then a
- * date. Rendered on the server, so the day boundary is the server's — a session
- * logged just before midnight can read as "Yesterday" to a user several time
- * zones away. Worth fixing when any screen depends on it being exact; the home
- * screen uses it as a caption.
+ * date.
+ *
+ * The day boundary is midnight in the app's timezone, the same one the calendar
+ * and every "today" query cut on — so a session the history grid puts on the
+ * 12th cannot be captioned "Yesterday" on the 14th. It renders identically on
+ * the server and the client for the same reason: neither reads a local clock.
+ *
+ * Rounding, not flooring, the day difference: a DST change makes one of these
+ * spans 23 or 25 hours, and dividing that by 86,400,000 lands either side of a
+ * whole number.
  */
 export function dayLabel(date: Date, now: Date = new Date()): string {
-  const days = Math.round((startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000);
+  const days = Math.round(
+    (startOfZonedDay(now).getTime() - startOfZonedDay(date).getTime()) / 86_400_000,
+  );
 
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
-  if (days > 1 && days < 7) return date.toLocaleDateString(undefined, { weekday: "long" });
+  if (days > 1 && days < 7) {
+    return date.toLocaleDateString(undefined, { weekday: "long", timeZone: APP_TIME_ZONE });
+  }
 
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-function startOfDay(date: Date): Date {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 /** Large counts lose their last digits: 248,391 → "248k". */

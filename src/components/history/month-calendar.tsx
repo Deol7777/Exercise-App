@@ -13,6 +13,7 @@ import {
   previousMonth,
   weekdayInitials,
 } from "@/lib/month";
+import { zonedDate } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 import type { MonthDay } from "@/server/services/progress";
 
@@ -39,7 +40,7 @@ export function MonthCalendar({
   const byDay = new Map(days.map((day) => [day.day, day]));
   const cells = monthGrid(month);
   const showingThisMonth = isSameMonth(month, currentMonth(now));
-  const today = showingThisMonth ? now.getUTCDate() : null;
+  const today = showingThisMonth ? zonedDate(now).day : null;
 
   return (
     <section aria-label={`Workouts in ${monthLabel(month, now)}`}>

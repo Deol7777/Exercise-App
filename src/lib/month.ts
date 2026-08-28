@@ -1,19 +1,18 @@
 /**
  * Calendar-month arithmetic for the history screen.
  *
- * Every date here is built and read in **UTC** — `Date.UTC`, `getUTCDay`,
- * `getUTCDate` — never the local getters. That is deliberate: the day a workout
- * falls on is decided by `date_trunc('day', started_at)` in Postgres, which on
- * Neon is UTC (see `findMonthOfSessions`). If this module used the local
- * calendar, the query and the grid would disagree about which cell a session
- * belongs to for every user outside UTC, and the offending day would light up
- * next to the one that has the session.
+ * Two kinds of arithmetic live here and the difference matters. Which weekday
+ * the 1st falls on, and how many days a month has, are *calendar* facts — true
+ * in every timezone — so they are computed with `Date.UTC` purely as fixed-point
+ * arithmetic that happens not to drift.
  *
- * The consequence a user can actually see: a workout started at 23:30 local
- * time in New York is already the next day in UTC, so it lands on tomorrow's
- * cell. That is the same cut `findWeekTotals` and `dayLabel` already use, so
- * the app is at least consistently wrong rather than internally inconsistent.
+ * Which month it is *now*, and the instants a month runs between, are *clock*
+ * questions, and those go through src/lib/time-zone.ts. That is what keeps the
+ * grid and `findMonthOfSessions` agreeing about which cell holds a session: both
+ * cut the day at midnight Pacific. Nothing here may use a local-time getter.
  */
+import { zonedDate, zonedInstant } from "./time-zone";
+
 
 /** A month, with `month` 1-indexed the way a human writes it — 8 is August. */
 export type Month = { year: number; month: number };
@@ -49,15 +48,16 @@ export function parseMonth(value: string | undefined, now: Date = new Date()): M
 }
 
 export function currentMonth(now: Date = new Date()): Month {
-  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+  const { year, month } = zonedDate(now);
+  return { year, month };
 }
 
-/** Midnight UTC on the 1st — the lower bound of the month's query. */
+/** The instant of midnight on the 1st, in the zone — the query's lower bound. */
 export function monthStart({ year, month }: Month): Date {
-  return new Date(Date.UTC(year, month - 1, 1));
+  return zonedInstant(year, month, 1);
 }
 
-/** Midnight UTC on the 1st of the *next* month: the exclusive upper bound. */
+/** Midnight on the 1st of the *next* month: the exclusive upper bound. */
 export function monthEnd(month: Month): Date {
   return monthStart(nextMonth(month));
 }
@@ -80,6 +80,7 @@ export function isFutureOrCurrent(month: Month, now: Date = new Date()): boolean
   return month.year > current.year || (month.year === current.year && month.month >= current.month);
 }
 
+/** A calendar fact, not a clock one: February 2026 has 28 days everywhere. */
 export function daysInMonth({ year, month }: Month): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
@@ -89,11 +90,12 @@ export function daysInMonth({ year, month }: Month): number {
  * headline says the month; repeating the current year in it is noise.
  */
 export function monthLabel(month: Month, now: Date = new Date()): string {
-  const date = monthStart(month);
+  /** Named as a calendar date and formatted as one, so no offset can shift it. */
+  const date = new Date(Date.UTC(month.year, month.month - 1, 1));
   return date.toLocaleDateString(undefined, {
     month: "long",
     timeZone: "UTC",
-    ...(month.year === now.getUTCFullYear() ? {} : { year: "numeric" }),
+    ...(month.year === zonedDate(now).year ? {} : { year: "numeric" }),
   });
 }
 
@@ -113,10 +115,12 @@ export function weekdayInitials(): string[] {
  *
  * Monday-first, because `date_trunc('week', …)` is ISO and the rest of the app
  * already calls Monday the start of a week. `getUTCDay` is Sunday-first, hence
- * the `+ 6` rotation.
+ * the `+ 6` rotation — and it reads the weekday of a *calendar* date, which no
+ * timezone changes, so this does not go through `monthStart`.
  */
 export function monthGrid(month: Month): (number | null)[] {
-  const leading = (monthStart(month).getUTCDay() + 6) % 7;
+  const first = new Date(Date.UTC(month.year, month.month - 1, 1));
+  const leading = (first.getUTCDay() + 6) % 7;
   const days = daysInMonth(month);
 
   return [

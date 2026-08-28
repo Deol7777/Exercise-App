@@ -25,6 +25,7 @@ import {
 import { apiFetch, ApiError } from "@/lib/api";
 import { MUSCLE_GROUP_LABELS, MUSCLE_GROUPS } from "@/lib/muscle-groups";
 import { queryKeys } from "@/lib/queries";
+import { APP_TIME_ZONE } from "@/lib/time-zone";
 import type {
   ExerciseSummary,
   LoggedExerciseEntry,
@@ -303,7 +304,10 @@ function RecentSessions({ sessions }: { sessions: WorkoutSessionListItem[] }) {
           {sessions.map((session) => (
             <li key={session.id} className="flex items-center justify-between gap-4">
               <span>
-                {new Date(session.startedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                {new Date(session.startedAt).toLocaleDateString(undefined, {
+                  dateStyle: "medium",
+                  timeZone: APP_TIME_ZONE,
+                })}
                 {session.endedAt ? "" : " · in progress"}
               </span>
               <span className="text-muted-foreground tabular-nums">

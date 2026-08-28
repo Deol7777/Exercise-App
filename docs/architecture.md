@@ -217,9 +217,14 @@ drizzle-kit migrations.
   Neon primary, so a careless `npm run db:push` or a destructive query in
   Drizzle Studio hits real data. The Docker database is for tests only.
   Per-developer Neon branches are the intended fix and are not set up.
-- **Aggregates cut weeks in the database's timezone**, which on Neon is UTC.
-  A user in Auckland or Los Angeles sees a week boundary that is not their
-  local Monday, and nothing takes a timezone from the user.
+- **Every day boundary is Pacific, for everybody.** `APP_TIME_ZONE` in
+  `src/lib/time-zone.ts` is `America/Los_Angeles`, and it decides the history
+  calendar's cells, "today", the Monday a week starts on and the greeting's
+  hour — in SQL through `at time zone` and in JS through `zonedDate` /
+  `zonedInstant`. Nothing reads a timezone from the user, so a user in Auckland
+  sees a day that rolls over mid-afternoon. The fix is a `time_zone` column on
+  `users` read the way `weight_unit` already is; the single place to change is
+  that one constant.
 - **`date_trunc` and `sum(numeric)` come back as strings.** Both are cast or
   converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
   milliseconds turned into a `Date`. A new aggregate that skips the cast returns

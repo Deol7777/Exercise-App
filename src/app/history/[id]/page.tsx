@@ -8,6 +8,7 @@ import { Stat, StatRow } from "@/components/ui/stat";
 import { Surface, SurfaceRule } from "@/components/ui/surface";
 import { dayLabel, formatDuration, plural } from "@/lib/format";
 import { MUSCLE_GROUP_LABELS } from "@/lib/muscle-groups";
+import { APP_TIME_ZONE } from "@/lib/time-zone";
 import { fromKilograms } from "@/lib/weight";
 import { isDomainError } from "@/server/errors";
 import { getWorkoutSession, type WorkoutSessionDetail } from "@/server/services/training";
@@ -58,7 +59,11 @@ export default async function WorkoutSessionPage({
 
       <Surface>
         <p className="text-sm text-muted-foreground">
-          Started {session.startedAt.toLocaleTimeString(undefined, { timeStyle: "short" })}
+          Started{" "}
+          {session.startedAt.toLocaleTimeString(undefined, {
+            timeStyle: "short",
+            timeZone: APP_TIME_ZONE,
+          })}
           {minutes === null ? " · still running" : null}
         </p>
         <SurfaceRule />
