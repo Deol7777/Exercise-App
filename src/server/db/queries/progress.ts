@@ -9,9 +9,11 @@
  * Warm-up sets are excluded from every statistic — that is what
  * `is_warmup = false` means (docs/glossary.md, "working set").
  */
-import { and, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lt, type SQL, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
+import type { Granularity } from "@/lib/range";
+import { APP_TIME_ZONE } from "@/lib/time-zone";
 
 import { db } from "..";
 import { exercises, sessionExercises, sets, workoutSessions } from "../schema";
@@ -33,44 +35,175 @@ export type LastPerformance = {
   sets: { position: number; reps: number; weight: number }[];
 };
 
-export type WeeklyVolumePoint = {
-  /** Monday of the week, midnight UTC. */
-  week: Date;
+export type VolumePoint = {
+  /** The instant the bucket begins, cut in the app's timezone. */
+  bucket: Date;
   muscleGroup: MuscleGroup;
   /** Sum of reps × weight over working sets, kilograms. */
   volume: number;
   setCount: number;
 };
 
+/**
+ * Days and weeks are cut at midnight in the app's timezone, not the database's.
+ *
+ * `AT TIME ZONE` applied to a `timestamptz` yields the wall-clock `timestamp`
+ * in that zone; applied to a `timestamp` it reads it *as* that zone and gives a
+ * `timestamptz` back. Both directions are needed: truncate in local wall clock,
+ * then convert the boundary back to an instant so it can be compared against
+ * `started_at`. Dropping the second conversion compares an instant to a naive
+ * timestamp and silently shifts every boundary by the offset.
+ */
+const zone = sql.raw(`'${APP_TIME_ZONE}'`);
+
+/**
+ * `granularity` is interpolated raw because `date_trunc`'s first argument is a
+ * unit name, not a value — a bound parameter there is a syntax error. It is
+ * safe only because `Granularity` is a closed union of three literals that
+ * never touches user input; widening that type is how this becomes an
+ * injection.
+ */
+const localBucket = (
+  at: SQL | typeof workoutSessions.startedAt,
+  granularity: Granularity = "day",
+) =>
+  sql`date_trunc(${sql.raw(`'${granularity}'`)}, ${at} at time zone ${zone}) at time zone ${zone}`;
+
+const localDay = (at: SQL | typeof workoutSessions.startedAt) => localBucket(at, "day");
+const localWeek = (at: SQL | typeof workoutSessions.startedAt) => localBucket(at, "week");
+
 /** The join every read here starts from: sets, up to the owning user. */
 const workingSetsOf = (userId: string) =>
   and(eq(workoutSessions.userId, userId), eq(sets.isWarmup, false));
 
 /**
+ * What makes one working set the record: heaviest first, then most reps at that
+ * weight, then most recent. The same ordering decides the best set of a day on
+ * the strength chart, where it is applied in TypeScript over the rows
+ * `findPerformedSets` returns.
+ */
+const heaviestFirst = [desc(sets.weight), desc(sets.reps), desc(workoutSessions.startedAt)];
+
+/** The columns a record is built from. */
+const recordRow = {
+  exerciseId: exercises.id,
+  exerciseName: exercises.name,
+  muscleGroup: exercises.muscleGroup,
+  weight: sets.weight,
+  reps: sets.reps,
+  achievedAt: workoutSessions.startedAt,
+};
+
+/**
  * The heaviest working set per exercise. `distinct on` picks one row per
- * exercise in the order given — heaviest first, then most reps at that weight,
- * then most recent — which is the record definition in one statement.
+ * exercise in the order given, which is the record definition in one statement.
  */
 export async function findPersonalRecords(userId: string): Promise<PersonalRecord[]> {
   const rows = await db
-    .selectDistinctOn([exercises.id], {
-      exerciseId: exercises.id,
-      exerciseName: exercises.name,
-      muscleGroup: exercises.muscleGroup,
-      weight: sets.weight,
-      reps: sets.reps,
-      achievedAt: workoutSessions.startedAt,
-    })
+    .selectDistinctOn([exercises.id], recordRow)
     .from(sets)
     .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
     .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
     .innerJoin(exercises, eq(exercises.id, sessionExercises.exerciseId))
     .where(workingSetsOf(userId))
-    .orderBy(exercises.id, desc(sets.weight), desc(sets.reps), desc(workoutSessions.startedAt));
+    .orderBy(exercises.id, ...heaviestFirst);
 
   return rows
     .map((row) => ({ ...row, weight: Number(row.weight) }))
     .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+}
+
+export type LoggedExercise = {
+  exerciseId: string;
+  name: string;
+  muscleGroup: MuscleGroup;
+  /** The most recent workout that held a working set of it. */
+  lastPerformedAt: Date;
+  /** Workouts it appeared in, inside the window — not sets. */
+  sessionCount: number;
+};
+
+/**
+ * Every exercise this user has actually put a working set into since `since`,
+ * most recently trained first.
+ *
+ * This is what the strength picker offers, and it is deliberately not the
+ * catalog: 71 seeded movements plus the user's own, of which a person trains a
+ * dozen, is a list to search rather than a row to tap. An exercise that only
+ * ever got a warm-up is absent for the same reason it contributes no volume —
+ * there is nothing to plot.
+ */
+export async function findLoggedExercises(userId: string, since: Date): Promise<LoggedExercise[]> {
+  /**
+   * Epoch milliseconds for the same reason `findWeeklyVolume` uses them: an
+   * aggregate over a timestamp comes back through the driver as a string, and
+   * `max(started_at)` is not the column any more, so its `mode: "date"` mapping
+   * no longer applies.
+   */
+  const lastMs = sql<number>`(extract(epoch from max(${workoutSessions.startedAt})) * 1000)::float8`;
+
+  const rows = await db
+    .select({
+      exerciseId: exercises.id,
+      name: exercises.name,
+      muscleGroup: exercises.muscleGroup,
+      lastMs: lastMs.as("last_ms"),
+      sessionCount: sql<number>`count(distinct ${workoutSessions.id})::int`,
+    })
+    .from(sets)
+    .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+    .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
+    .innerJoin(exercises, eq(exercises.id, sessionExercises.exerciseId))
+    .where(and(workingSetsOf(userId), gte(workoutSessions.startedAt, since)))
+    .groupBy(exercises.id, exercises.name, exercises.muscleGroup)
+    .orderBy(desc(lastMs), exercises.name);
+
+  return rows.map(({ lastMs: ms, ...rest }) => ({ ...rest, lastPerformedAt: new Date(ms) }));
+}
+
+export type PerformedSet = {
+  workoutSessionId: string;
+  /** The workout's start, not the set's — a session is one point on the chart. */
+  startedAt: Date;
+  reps: number;
+  /** Kilograms. */
+  weight: number;
+};
+
+/**
+ * Every working set of one exercise since `since`, oldest first.
+ *
+ * Rows rather than an aggregate, because the callers want them cut two ways —
+ * the heaviest set of each day, and the volume of each bucket — and doing both
+ * in SQL would be two statements over the same rows. The scan is
+ * one exercise inside a bounded window — a few hundred rows for a year of hard
+ * training — so the work saved by pushing it down is not worth the drift.
+ */
+export async function findPerformedSets(
+  userId: string,
+  exerciseId: string,
+  since: Date,
+): Promise<PerformedSet[]> {
+  const rows = await db
+    .select({
+      workoutSessionId: workoutSessions.id,
+      startedAt: workoutSessions.startedAt,
+      reps: sets.reps,
+      weight: sets.weight,
+    })
+    .from(sets)
+    .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+    .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
+    .where(
+      and(
+        workingSetsOf(userId),
+        eq(sessionExercises.exerciseId, exerciseId),
+        gte(workoutSessions.startedAt, since),
+      ),
+    )
+    .orderBy(workoutSessions.startedAt, sessionExercises.position, sets.position);
+
+  return rows.map((row) => ({ ...row, weight: Number(row.weight) }));
 }
 
 /**
@@ -123,29 +256,93 @@ export async function findLastPerformance(
   };
 }
 
+export type LastWorkingSets = {
+  workoutSessionId: string;
+  /** The workout's start. */
+  startedAt: Date;
+  /** Working sets of that exercise in that workout, in the order they were done. */
+  sets: { reps: number; weight: number }[];
+};
+
 /**
- * Volume per muscle group per week, most recent week first. An exercise belongs
- * to exactly one muscle group, which is what makes this a plain `group by`
- * rather than an apportionment.
+ * The working sets of one exercise in the most recent workout that held any —
+ * warm-ups excluded, unlike `findLastPerformance`.
+ *
+ * The two look alike and answer different questions. That one is a *recall* of
+ * what happened, warm-ups and all, and it is what the logging screen shows
+ * under "last time". This one feeds a statistic, so it obeys the rule every
+ * other statistic here obeys: a warm-up is not a set that counts.
+ *
+ * Deliberately unbounded by a range. "Last time" is whenever it was, and a card
+ * that went blank because the last squat was 40 days ago and the range says 30
+ * would be answering a question nobody asked.
+ *
+ * Two statements rather than a window function: which workout was last is one
+ * question and what was in it is another, and the same exercise may appear in a
+ * workout twice — a second entry of it belongs to the same answer, which is why
+ * the second statement filters by session and exercise rather than by entry.
  */
-export async function findWeeklyVolume(
+export async function findLastWorkingSets(
   userId: string,
-  weeks: number,
-): Promise<WeeklyVolumePoint[]> {
+  exerciseId: string,
+): Promise<LastWorkingSets | null> {
+  const ofExercise = and(workingSetsOf(userId), eq(sessionExercises.exerciseId, exerciseId));
+
+  const [latest] = await db
+    .select({ id: workoutSessions.id, startedAt: workoutSessions.startedAt })
+    .from(sets)
+    .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+    .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
+    .where(ofExercise)
+    .orderBy(desc(workoutSessions.startedAt))
+    .limit(1);
+
+  if (!latest) return null;
+
+  const rows = await db
+    .select({ reps: sets.reps, weight: sets.weight })
+    .from(sets)
+    .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+    .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
+    .where(and(ofExercise, eq(workoutSessions.id, latest.id)))
+    .orderBy(sessionExercises.position, sets.position);
+
+  return {
+    workoutSessionId: latest.id,
+    startedAt: latest.startedAt,
+    sets: rows.map((row) => ({ reps: row.reps, weight: Number(row.weight) })),
+  };
+}
+
+/**
+ * Volume per muscle group per bucket, since `from`, oldest bucket first.
+ *
+ * An exercise belongs to exactly one muscle group, which is what makes this a
+ * plain `group by` rather than an apportionment.
+ *
+ * The bucket size is the caller's, because a week of daily bars and a year of
+ * monthly ones are the same question asked at two resolutions (src/lib/range.ts).
+ * The lower bound arrives as an instant rather than being computed here, so one
+ * place decides where a range begins and the zero-filling in the service can
+ * agree with it.
+ */
+export async function findVolumeByBucket(
+  userId: string,
+  from: Date,
+  granularity: Granularity,
+): Promise<VolumePoint[]> {
   /**
    * Epoch milliseconds, not the timestamp itself: `date_trunc` returns a value
    * the driver hands back as a *string* (`2026-08-17 00:00:00+00`), which is
    * not an ISO literal every engine parses. A number crosses the boundary
    * unambiguously and becomes a `Date` below — the same "convert once, here"
    * rule that `numeric` follows.
-   *
-   * Weeks are cut in the database's timezone, which on Neon is UTC.
    */
-  const weekMs = sql<number>`(extract(epoch from date_trunc('week', ${workoutSessions.startedAt})) * 1000)::float8`;
+  const bucketMs = sql<number>`(extract(epoch from ${localBucket(workoutSessions.startedAt, granularity)}) * 1000)::float8`;
 
   const rows = await db
     .select({
-      weekMs: weekMs.as("week_ms"),
+      bucketMs: bucketMs.as("bucket_ms"),
       muscleGroup: exercises.muscleGroup,
       volume: sql<number>`sum(${sets.reps} * ${sets.weight})::float8`,
       setCount: sql<number>`count(${sets.id})::int`,
@@ -154,25 +351,17 @@ export async function findWeeklyVolume(
     .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
     .innerJoin(workoutSessions, eq(workoutSessions.id, sessionExercises.workoutSessionId))
     .innerJoin(exercises, eq(exercises.id, sessionExercises.exerciseId))
-    .where(
-      and(
-        workingSetsOf(userId),
-        gte(
-          workoutSessions.startedAt,
-          sql`date_trunc('week', now()) - make_interval(weeks => ${weeks - 1})`,
-        ),
-      ),
-    )
-    .groupBy(weekMs, exercises.muscleGroup)
-    .orderBy(desc(weekMs), exercises.muscleGroup);
+    .where(and(workingSetsOf(userId), gte(workoutSessions.startedAt, from)))
+    .groupBy(bucketMs, exercises.muscleGroup)
+    .orderBy(bucketMs, exercises.muscleGroup);
 
-  return rows.map(({ weekMs: ms, ...rest }) => ({ ...rest, week: new Date(ms) }));
+  return rows.map(({ bucketMs: ms, ...rest }) => ({ ...rest, bucket: new Date(ms) }));
 }
 
 export type WeekTotals = {
   /**
-   * Monday 00:00 in the database's timezone, which on Neon is UTC — the same
-   * cut `findWeeklyVolume` uses, so "this week" means one thing across the app.
+   * The instant of Monday 00:00 in the app's timezone — the same cut
+   * `findWeeklyVolume` uses, so "this week" means one thing across the app.
    */
   weekStart: Date;
   workouts: number;
@@ -194,7 +383,7 @@ export type SessionTotals = {
 };
 
 /** `date_trunc('week', …)` is ISO — weeks start on Monday. */
-const thisWeek = sql`date_trunc('week', now())`;
+const thisWeek = localWeek(sql`now()`);
 
 /**
  * The home screen's "this week" band. Two statements rather than one because
@@ -232,8 +421,8 @@ export async function findWeekTotals(userId: string): Promise<WeekTotals> {
   };
 }
 
-/** Midnight in the database's timezone (UTC), the same cut `thisWeek` uses. */
-const today = sql`date_trunc('day', now())`;
+/** Midnight in the app's timezone, the same cut `thisWeek` uses. */
+const today = localDay(sql`now()`);
 
 /**
  * One session, totalled. Split out because "today's workout" and "the last one
@@ -340,11 +529,11 @@ export async function findLatestFinishedSession(
  *
  * `day` is the day of the month as an integer rather than a `Date` on purpose.
  * A `Date` would be read back with `getDate()` somewhere and silently shift a
- * cell for anyone outside the database's timezone — `extract(day from …)` and
- * src/lib/month.ts agree on UTC and cannot drift.
+ * cell for anyone outside the server's zone — `extract(day from … at time zone)`
+ * and src/lib/month.ts agree on Pacific and cannot drift.
  */
 export type MonthDay = {
-  /** 1–31, in the database's timezone (UTC on Neon). */
+  /** 1–31, in the app's timezone (src/lib/time-zone.ts). */
   day: number;
   sessionCount: number;
   /** The earliest session of that day: where tapping the cell goes. */
@@ -357,8 +546,10 @@ export type MonthDay = {
  * Every day of one month that has a workout on it, with the counts the history
  * screen totals up.
  *
- * Grouped in SQL rather than fetched row by row and bucketed in JS, so the day
- * boundary is Postgres's — the same `date_trunc` cut the rest of this file uses.
+ * Grouped in SQL rather than fetched row by row and bucketed in JS, so one place
+ * decides the boundary — the same zone the rest of this file cuts on. The `from`
+ * and `to` bounds arrive as instants from `monthStart`/`monthEnd`, which cut
+ * there too.
  * Seconds rather than minutes because the caller sums across the month and
  * floors once: summing per-day floors loses up to a minute a day.
  *
@@ -372,7 +563,9 @@ export async function findMonthOfSessions(
 ): Promise<MonthDay[]> {
   return db
     .select({
-      day: sql<number>`extract(day from ${workoutSessions.startedAt})::int`.as("day"),
+      day: sql<number>`extract(day from ${workoutSessions.startedAt} at time zone ${zone})::int`.as(
+        "day",
+      ),
       sessionCount: sql<number>`count(*)::int`,
       workoutSessionId: sql<string>`(array_agg(${workoutSessions.id} order by ${workoutSessions.startedAt}))[1]`,
       seconds: sql<number>`coalesce(sum(extract(epoch from (${workoutSessions.endedAt} - ${workoutSessions.startedAt}))), 0)::float8`,

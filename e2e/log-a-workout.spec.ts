@@ -165,8 +165,26 @@ test("corrects a set, and shows every weight in the chosen unit", async ({ page 
   await page.getByRole("link", { name: "Log Deadlift" }).click();
   await expect(page.getByLabel("Weight (lb)", { exact: true })).toHaveValue("226");
 
+  /**
+   * Scoped to the records card, because the strength card names the same set
+   * again underneath its chart — both are the record, in pounds, and an
+   * unscoped locator matches two elements.
+   */
   await page.goto("/progress");
-  await expect(page.getByText("226 lb × 5")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Records" }).getByText("226 lb × 5"),
+  ).toBeVisible();
+
+  /**
+   * The last-session card is the same set asked a third way: the heaviest bar
+   * of that workout, and how many sets stayed on it. Converted like everything
+   * else, and one set, because the correction replaced the 100 kg rather than
+   * adding to it.
+   */
+  const lastSession = page.getByRole("region", { name: "Last session" });
+  await expect(lastSession.getByText("226")).toBeVisible();
+  await expect(lastSession.getByText("Sets at top")).toBeVisible();
+  await expect(lastSession.getByText("5 reps")).toBeVisible();
 });
 
 test("keeps one user's log away from another", async ({ page, context }) => {

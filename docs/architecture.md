@@ -38,7 +38,7 @@ built and running against the live database.
 | Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 85 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Tests | Vitest against a local Postgres in Docker: 156 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -65,6 +65,13 @@ built and running against the live database.
 | `GET /api/progress/personal-records` | The heaviest working set per exercise. |
 | `GET /api/progress/volume` | Working-set volume by muscle group by week. `?weeks=` defaults to 8, clamped 1–52 in the service. |
 
+The `/progress` screen reads more than this table exposes: which lifts have been
+trained lately (`getLoggedExercises`), one lift's heaviest set per day
+(`getStrengthProgress`), one lift's volume per bucket (`getExerciseVolume`) and
+the top set of the workout it was last done in (`getLastTopSet`)
+are called straight from the server component, and have no endpoint. That is allowed — a server component may call a domain
+service — but it means the REST surface is no longer a mirror of the screens.
+
 Every one of them takes the acting user from the auth session. A path id that
 belongs to another user is answered `404`, never `403`: the difference would
 itself be a way to probe for rows.
@@ -80,8 +87,8 @@ already visible.
 | Web UI | `src/app/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts` and TanStack Query, domain services (server components only) |
 | API client | `src/lib/api.ts`, `src/lib/queries.ts`, `src/app/providers.tsx` | The browser's side of the REST contract: one `apiFetch` throwing `ApiError`, and the TanStack Query cache the logging screen runs on (ADR 0014) | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
-| Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, volume aggregation | Data access |
-| Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, weekly volume | PostgreSQL |
+| Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, top set per day, volume aggregation | Data access |
+| Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, volume by bucket, one lift's top set over time, and the top set of its last workout | PostgreSQL |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
 | Tests | `src/**/*.test.ts`, `src/test/**` | Service and handler suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
@@ -229,6 +236,40 @@ drizzle-kit migrations.
   converted in `queries/progress.ts` — `sum(...)::float8`, and the week as epoch
   milliseconds turned into a `Date`. A new aggregate that skips the cast returns
   a string that TypeScript will happily call a number.
+- **The week boundary is computed twice, in two languages.** Postgres cuts weeks
+  with `date_trunc('week', … at time zone …)`; `startOfZonedWeek` in
+  `src/lib/time-zone.ts` does the same arithmetic in JavaScript so the volume
+  chart can zero-fill the weeks with no training in them. If the two ever
+  disagree nothing throws — the volume lands in a week the series does not
+  contain and every bar reads zero. `src/server/services/progress.test.ts`
+  asserts that this week's work lands in this week's bar, which is the only
+  thing standing between the two implementations.
+- **A range and its bucket size are one choice, not two.** `src/lib/range.ts`
+  pairs each of the three ranges with the granularity that makes it readable —
+  a week of daily bars, a year of monthly ones. Adding a range means adding both
+  halves, and nothing outside that file may pick a granularity of its own.
+- **Bar mode overrules the axis framing.** The strength chart is framed to its
+  data as a line, because nobody's squat goes to zero; as bars it is forced back
+  to a zero baseline, because the height of a bar is its value and a truncated
+  one is a lie. `SeriesChart` decides this, not its callers.
+- **The lift dropdown on `/progress` is the only client component on it.**
+  Everything else, charts included, renders on the server (ADR 0016). It holds
+  no state — it writes its choice to `?exercise=` and carries the other three
+  parameters forward, so a change that forgot to preserve one would silently
+  reset that control.
+- **One lift and one range govern every card on `/progress` except the muscle
+  balance.** Both controls sit at the top of the screen rather than on the cards
+  they drive: two charts stacked on different lifts, or different windows, read
+  as one picture and say something true of neither. The cost is that the volume
+  chart can no longer be widened to *all* training — the balance card is where
+  the whole picture lives now. The last-session card is the deliberate exception
+  to the range, and is unbounded by it: "last time" is whenever it was.
+- **Chart geometry is hand-written and only half tested.** The scales, ticks
+  and bucket arithmetic are pure functions with tests (`src/lib/chart.test.ts`,
+  `src/lib/range.test.ts`), but the drawing itself is inline SVG (ADR 0016) and
+  has none. The failure mode is visual — a label past the `viewBox` edge, a
+  polygon vertex on the centre — and with no component test runner the only
+  check is looking at the rendered page.
 - **Component coverage is only what the three end-to-end journeys walk
   through.** There is no component-level test runner — no jsdom, no Testing
   Library — so a component off those paths is verified by hand.
