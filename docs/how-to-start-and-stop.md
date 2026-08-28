@@ -79,7 +79,7 @@ development database.
 | `npm run dev` (`./scripts/start.sh`) | **Neon**, via `DATABASE_URL` in `.env.local` |
 | `npm run build` | **Neon**, same string — a build that prerenders a page runs its queries for real |
 | `npm start` (serves the build locally) | **Neon**, same string |
-| `npm run db:migrate` / `db:seed` / `db:studio` | **Neon**, via `DATABASE_URL_UNPOOLED` |
+| `npm run db:migrate` / `db:seed` / `db:seed:demo` / `db:studio` | **Neon**, via `DATABASE_URL_UNPOOLED` |
 | `npm test`, `./scripts/test.sh` | **Docker Postgres on 5433** — never Neon |
 | `npm run test:e2e` | **Docker Postgres on 5433** — Playwright overrides the strings for its own server |
 | Deployed on Vercel | **Neon**, from Vercel's environment variables |
@@ -163,6 +163,25 @@ npm run db:migrate    # apply it to Neon
 
 Commit whatever `db:generate` produced. Never use `npm run db:push` against
 Neon — it changes the schema with no migration file to show for it.
+
+## Filling an account with demo data
+
+The read screens — `/progress` above all — need a year of training before they
+show anything worth looking at, and logging one by hand is not realistic:
+
+```bash
+npm run db:seed:demo -- --email you@example.com            # 52 weeks onto that account
+npm run db:seed:demo -- --email you@example.com --weeks 12 # a shorter stretch
+```
+
+It writes to **Neon**, like every other `db:` command, so it is real data on a
+real account. It refuses to run against an account that already has workout
+sessions; `--replace` overrides that by **deleting that user's entire training
+log first**, which cannot be undone. `--email` may be omitted only when exactly
+one account exists.
+
+The year is generated, not random: the same `--seed` produces the same
+workouts, so a screenshot can be reproduced later.
 
 ## When something will not start
 

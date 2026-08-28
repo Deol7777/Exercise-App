@@ -103,6 +103,7 @@ be reordered (exercise entries can).
 | `npm run db:generate` | Write a new SQL migration from schema changes. Commit what it produces. |
 | `npm run db:migrate` | Apply pending migrations. Uses the **direct** URL. |
 | `npm run db:seed` | Seed the global exercise catalog. Idempotent. |
+| `npm run db:seed:demo` | Fill one account with a year of generated training, for looking at `/progress`. Writes to Neon; refuses an account that already has sessions unless `--replace` (which deletes that user's whole log). |
 | `npm run db:studio` | Drizzle Studio against the current database. |
 | `npm run db:push` | Pushes schema with no migration file. Local throwaway branches only — never a shared environment. |
 
