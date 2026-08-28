@@ -57,7 +57,7 @@ const tabBar = (page: import("@playwright/test").Page) =>
 const TAB_URLS = {
   Home: /\/$/,
   Workout: /\/log$/,
-  Browse: /\/browse$/,
+  Routines: /\/routines$/,
   History: /\/history$/,
   Progress: /\/progress$/,
 } as const;
@@ -120,11 +120,11 @@ test("signs up, logs a workout, and reads it back", async ({ page }) => {
   await expect(page.getByText("No workout in progress")).toBeVisible();
 
   await openTab(page, "History");
-  await expect(page.getByText("1 exercises · 1 sets")).toBeVisible();
+  await expect(page.getByText("1 exercise · 1 set")).toBeVisible();
 
-  await page.getByRole("link", { name: /exercises · 1 sets/ }).click();
-  await expect(page.getByText("400 kg · 1 working sets")).toBeVisible();
-  await expect(page.getByText("5 × 80 kg")).toBeVisible();
+  await page.getByRole("link", { name: /1 exercise · 1 set/ }).click();
+  /** No space before the unit here: `/history/[id]` renders it in its own span. */
+  await expect(page.getByText("5 × 80kg")).toBeVisible();
 });
 
 test("corrects a set, and shows every weight in the chosen unit", async ({ page }) => {

@@ -4,8 +4,8 @@
  * GET  lists this user's sessions, newest first, with entry and set counts.
  *      `?active=true` returns the one still in progress with its exercise
  *      entries and sets, or null — the logging screen's whole payload.
- * POST starts a session. Only one may be in progress at a time; a second
- *      attempt is a 409.
+ * POST starts a session, empty or pre-filled from a routine (`routineId`).
+ *      Only one may be in progress at a time; a second attempt is a 409.
  *
  * The owning user is the session user, never anything in the request.
  */
@@ -18,6 +18,7 @@ import {
   getActiveWorkoutSessionDetail,
   listWorkoutSessionsFor,
   startWorkoutSession,
+  startWorkoutSessionFromRoutine,
 } from "@/server/services/training";
 
 import { fromError, invalidBody, unauthenticated } from "../_lib/respond";
@@ -52,8 +53,13 @@ export async function POST(request: Request) {
   const parsed = createWorkoutSessionSchema.safeParse(body ?? {});
   if (!parsed.success) return invalidBody(parsed.error);
 
+  const { routineId, ...input } = parsed.data;
+
   try {
-    const session = await startWorkoutSession(userId, parsed.data);
+    const session = routineId
+      ? await startWorkoutSessionFromRoutine(userId, routineId, input)
+      : await startWorkoutSession(userId, input);
+
     return NextResponse.json(session, { status: 201 });
   } catch (error) {
     return fromError(error);

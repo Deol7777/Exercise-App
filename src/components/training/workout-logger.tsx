@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { StartRoutineLink } from "@/components/routines/start-routine-link";
 import { ExerciseEntryCard } from "@/components/training/exercise-entry-card";
 import { FinishWorkoutDialog } from "@/components/training/finish-workout-dialog";
 import { Button } from "@/components/ui/button";
@@ -46,11 +47,13 @@ export function WorkoutLogger({
   session: initialSession,
   catalog,
   recent,
+  routineCount,
   unit,
 }: {
   session: LoggedWorkoutSession | null;
   catalog: ExerciseSummary[];
   recent: WorkoutSessionListItem[];
+  routineCount: number;
   unit: WeightUnit;
 }) {
   const router = useRouter();
@@ -205,6 +208,7 @@ export function WorkoutLogger({
             <PillButton onClick={() => start.mutate()} disabled={busy}>
               {start.isPending ? "Starting…" : "Start workout"}
             </PillButton>
+            <StartRoutineLink routineCount={routineCount} />
             {error ? <FieldError>{error}</FieldError> : null}
           </div>
         </Surface>

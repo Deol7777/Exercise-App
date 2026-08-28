@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ChartLine, Dumbbell, House, ListTree } from "lucide-react";
+import { CalendarDays, ChartLine, ClipboardList, Dumbbell, House } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/", label: "Home", icon: House, exact: true },
   { href: "/log", label: "Workout", icon: Dumbbell, exact: false },
-  { href: "/browse", label: "Browse", icon: ListTree, exact: false },
+  { href: "/routines", label: "Routines", icon: ClipboardList, exact: false },
   { href: "/history", label: "History", icon: CalendarDays, exact: false },
   { href: "/progress", label: "Progress", icon: ChartLine, exact: false },
 ] as const;

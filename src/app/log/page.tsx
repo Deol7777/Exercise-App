@@ -7,6 +7,7 @@ import type {
   WorkoutSessionListItem,
 } from "@/lib/types/training";
 import { listExercises } from "@/server/services/exercises";
+import { listRoutinesFor } from "@/server/services/routines";
 import {
   getActiveWorkoutSessionDetail,
   listWorkoutSessionsFor,
@@ -25,10 +26,11 @@ import {
 export default async function LogPage() {
   const { userId, unit } = await requireAccount();
 
-  const [detail, catalog, recent] = await Promise.all([
+  const [detail, catalog, recent, routines] = await Promise.all([
     getActiveWorkoutSessionDetail(userId),
     listExercises(userId),
     listWorkoutSessionsFor(userId, { limit: 5 }),
+    listRoutinesFor(userId),
   ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function LogPage() {
         session={detail && toWireSession(detail)}
         catalog={catalog satisfies ExerciseSummary[]}
         recent={recent.map(toWireSummary)}
+        routineCount={routines.length}
         unit={unit}
       />
     </Screen>

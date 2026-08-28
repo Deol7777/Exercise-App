@@ -29,17 +29,18 @@ built and running against the live database.
 
 | Area | State |
 | --- | --- |
-| Schema | All eight tables migrated, plus `users.weight_unit` in `0001_tidy_makkari` and `users.theme` in `0003_complex_tomorrow_man`. Originally (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`). `0000_rapid_the_fury`. |
+| Schema | Ten tables migrated. The original eight in `0000_rapid_the_fury` (`users`, `accounts`, `sessions`, `verification_tokens`, `exercises`, `workout_sessions`, `session_exercises`, `sets`), then `users.weight_unit` in `0001_tidy_makkari`, `sign_in_attempts` in `0002_grey_gargoyle`, `users.theme` in `0003_complex_tomorrow_man`, and `routines` + `routine_exercises` in `0004_serious_sumo`. |
 | Exercise catalog | Seeded, 71 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out, account deletion. Auth.js v5, `jwt` session strategy. Sign-in is throttled to ten failures per email per fifteen minutes (ADR 0015). `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
-| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/history`, `/history/[id]`, `/progress`. |
+| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/log/[entryId]`, `/routines`, `/routines/start`, `/routines/[id]`, `/history`, `/history/[id]`, `/progress`, `/settings`. |
 | Exercise marks | `src/components/ui/exercise-icon.tsx` draws a line mark per movement, matched on the catalog name; all 71 global exercises have one, and anything unmatched (a custom exercise) falls back to the mascot. Used by the logging card and the stepper screen. |
-| Domain services | `users`, `exercises`, `training`, `progress` in `src/server/services/`. |
+| Domain services | `users`, `exercises`, `training`, `routines`, `progress` in `src/server/services/`. |
 | Theming | Six colour themes (ADR 0017), stored on `users.theme` and applied by the root layout as `data-theme` on `<html>`. Every screen already reads role tokens, so a theme is a block of token values in `globals.css` and nothing else. Two are dark. |
-| Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/progress.ts`. |
+| Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/routines.ts`, `queries/progress.ts`, and `queries/positions.ts` for the one shared `max(position) + 1` expression. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Tests | Vitest against a local Postgres in Docker: 156 tests, plus 5 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
+| Routines | Reusable, named lists of exercises (`routines`, `routine_exercises`). Created, edited, reordered and deleted on `/routines`. A **Start routine** link on the home screen and `/log` opens `/routines/start`, a screen of one card per routine; tapping one **copies** its exercises into a new workout session, and nothing links them afterwards. |
+| Tests | Vitest against a local Postgres in Docker: 196 tests, plus 8 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
 
@@ -52,13 +53,21 @@ built and running against the live database.
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
 | `POST /api/exercises` | Create a custom exercise, private to the caller. |
 | `GET /api/workout-sessions` | This user's sessions, newest first, with entry and set counts. `?active=true` returns the one in progress **with its exercise entries and sets**, or `null` — the logging screen's whole payload. |
-| `POST /api/workout-sessions` | Start a session. 409 if one is already in progress. |
+| `POST /api/workout-sessions` | Start a session, empty or pre-filled from a routine via `routineId`. 409 if one is already in progress. |
 | `GET /api/workout-sessions/[id]` | One session with its exercise entries and their sets. |
 | `PATCH /api/workout-sessions/[id]` | Edit notes and/or `endedAt`. `endedAt: null` reopens it. |
 | `DELETE /api/workout-sessions/[id]` | Delete it, cascading to entries and sets. |
 | `POST /api/workout-sessions/[id]/exercises` | Add an exercise entry to the end of the session. |
 | `PATCH /api/workout-sessions/[id]/exercises` | Rewrite the running order. Takes every entry id exactly once; a partial list is a 422. |
 | `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
+| `GET /api/routines` | This user's routines, alphabetically, with a count of what is in each. |
+| `POST /api/routines` | Create a routine. Names are unique per user; a repeat is a 409. |
+| `GET /api/routines/[id]` | One routine with its exercises, in order. |
+| `PATCH /api/routines/[id]` | Rename it and/or edit its notes. |
+| `DELETE /api/routines/[id]` | Delete it and its exercises. Workout sessions started from it are untouched. |
+| `POST /api/routines/[id]/exercises` | Append an exercise to the routine. |
+| `PATCH /api/routines/[id]/exercises` | Rewrite the routine's order. Takes every id exactly once; a partial list is a 422. |
+| `DELETE /api/routine-exercises/[id]` | Remove one exercise from a routine. |
 | `POST /api/exercise-entries/[id]/sets` | Log a set. |
 | `PATCH /api/sets/[id]` | Correct a logged set's reps, weight or warm-up flag. `position` is not editable. |
 | `DELETE /api/sets/[id]` | Remove a set. |
@@ -77,9 +86,10 @@ Every one of them takes the acting user from the auth session. A path id that
 belongs to another user is answered `404`, never `403`: the difference would
 itself be a way to probe for rows.
 
-The next slice is whatever the log turns out to need in use — editing a logged
-set, reordering exercises, and a display unit in pounds are the three that are
-already visible.
+The next slice is whatever the log turns out to need in use. The exercise
+catalog has no screen of its own — `/browse` was a placeholder and was replaced
+by `/routines` in the tab bar, so the catalog is reachable only through the two
+pickers that add an exercise to something.
 
 ## Components
 
@@ -275,12 +285,26 @@ drizzle-kit migrations.
   has none. The failure mode is visual — a label past the `viewBox` edge, a
   polygon vertex on the centre — and with no component test runner the only
   check is looking at the rendered page.
-- **Component coverage is only what the three end-to-end journeys walk
-  through.** There is no component-level test runner — no jsdom, no Testing
-  Library — so a component off those paths is verified by hand.
+- **A routine and the workouts started from it are unrelated after the copy.**
+  There is no `routine_id` on `workout_sessions`, deliberately: editing a
+  routine cannot rewrite what a past workout says it did. The price is that
+  `/history` cannot tell you a workout was "Push Day", and nothing can count how
+  often a routine actually gets used. Adding a nullable, `ON DELETE SET NULL`
+  column later would buy the label back without weakening the copy.
+- **`routine_exercises.exercise_id` cascades where `session_exercises.exercise_id`
+  restricts.** Deleting a custom exercise silently drops it from every routine
+  holding it, and there is no warning first — a plan losing a line is
+  recoverable, a logged performance is not. The two are meant to differ; a
+  change that "fixes the inconsistency" in either direction breaks one of them.
+- **Nothing in the UI reaches routine or exercise-entry notes.** Both columns
+  exist and both are accepted by their schemas, and no screen writes either.
+- **Component coverage is only what the end-to-end journeys walk through.**
+  There is no component-level test runner — no jsdom, no Testing Library — so a
+  component off those paths is verified by hand. The four routines components
+  are covered only by `e2e/routines.spec.ts`.
 - **Handler tests mock the session.** `currentUserId` is replaced wholesale in
   `src/app/api/routes.test.ts`; the end-to-end suite is what actually exercises
-  Auth.js, and it does so in three paths only.
+  Auth.js.
 - **The end-to-end suite needs a matching browser build.** `npx playwright
   install chromium` after a Playwright upgrade, or every spec fails on launch.
 - **Switching the display unit is fire-and-forget.** The select PATCHes and does

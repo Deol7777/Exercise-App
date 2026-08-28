@@ -19,6 +19,7 @@ import {
   insertExerciseEntry,
   insertSet,
   insertWorkoutSession,
+  insertWorkoutSessionWithExercises,
   listWorkoutSessions,
   reorderExerciseEntries as reorderExerciseEntryRows,
   updateSet,
@@ -29,6 +30,7 @@ import {
   type WorkoutSessionRecord,
   type WorkoutSessionSummary,
 } from "../db/queries/training";
+import { findRoutineDetail } from "../db/queries/routines";
 import { ConflictError, InvalidError, NotFoundError } from "../errors";
 import { getExercise } from "./exercises";
 
@@ -41,25 +43,68 @@ export type {
 };
 
 /**
+ * The rules every start has to pass, wherever it came from.
+ *
  * Only one workout session may be in progress at a time. Two open sessions have
  * no meaning — you are in one gym — and allowing them makes "the current
  * session" ambiguous for every screen that asks for it.
+ *
+ * Returns the parsed start time so the caller does not parse it twice.
  */
-export async function startWorkoutSession(
-  userId: string,
-  input: { startedAt?: string; notes?: string } = {},
-): Promise<WorkoutSessionRecord> {
+async function assertCanStart(userId: string, startedAt?: string): Promise<Date | undefined> {
   const active = await findActiveWorkoutSession(userId);
   if (active) {
     throw new ConflictError("A workout session is already in progress. Finish it first.");
   }
 
-  const startedAt = input.startedAt ? new Date(input.startedAt) : undefined;
-  if (startedAt && startedAt.getTime() > Date.now()) {
+  const parsed = startedAt ? new Date(startedAt) : undefined;
+  if (parsed && parsed.getTime() > Date.now()) {
     throw new InvalidError("A workout session cannot start in the future.");
   }
 
+  return parsed;
+}
+
+export async function startWorkoutSession(
+  userId: string,
+  input: { startedAt?: string; notes?: string } = {},
+): Promise<WorkoutSessionRecord> {
+  const startedAt = await assertCanStart(userId, input.startedAt);
+
   return insertWorkoutSession({ userId, startedAt, notes: input.notes ?? null });
+}
+
+/**
+ * Starts a workout session pre-filled with a routine's exercises, in order.
+ *
+ * The exercises are *copied*, and nothing links the two afterwards: there is no
+ * `routine_id` on `workout_sessions`, so editing the routine tomorrow cannot
+ * rewrite what this session says today. Only the exercises come across — no
+ * sets, no target reps, no weights.
+ *
+ * An empty routine is allowed. It starts an empty session, which is exactly
+ * what the plain start button does, so refusing would buy nothing.
+ */
+export async function startWorkoutSessionFromRoutine(
+  userId: string,
+  routineId: string,
+  input: { startedAt?: string; notes?: string } = {},
+): Promise<WorkoutSessionRecord> {
+  const routine = await findRoutineDetail(userId, routineId);
+  if (!routine) throw new NotFoundError("That routine does not exist.");
+
+  const startedAt = await assertCanStart(userId, input.startedAt);
+
+  return insertWorkoutSessionWithExercises({
+    userId,
+    startedAt,
+    notes: input.notes ?? null,
+    /** Already ordered by position; the copy preserves it as 1..n. */
+    exercises: routine.exercises.map((line) => ({
+      exerciseId: line.exercise.id,
+      notes: line.notes,
+    })),
+  });
 }
 
 export function getActiveWorkoutSession(userId: string): Promise<WorkoutSessionRecord | null> {

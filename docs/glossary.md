@@ -10,12 +10,14 @@ the same thing.
 | Term | Means here | Not to be confused with | Where it lives in code |
 | --- | --- | --- | --- |
 | _User_ | A person with an account. The owner of every piece of training data; the only identity concept in the system. | _Account_ — in this codebase that is an Auth.js table linking a user to an OAuth provider, not a synonym for user. | `users` table (Auth.js) |
-| _Session_ | **Ambiguous — always qualify it.** Use _workout session_ for training, _auth session_ for sign-in state. Never bare "session" in a name. | — | `workout_sessions` table / Auth.js `sessions` table |
-| _Workout session_ | One visit to the gym: a start time, an end time, and an ordered list of exercise entries. | _Program_, _workout template_ — neither exists; nothing is prescribed in advance. | `workout_sessions` table |
+| _Session_ | **Ambiguous — always qualify it.** Use _workout session_ for training, _auth session_ for sign-in state. Never bare "session" in a name, and never for a _routine_ — a saved list of exercises is a routine, not a session. | — | `workout_sessions` table / Auth.js `sessions` table |
+| _Workout session_ | One visit to the gym: a start time, an end time, and an ordered list of exercise entries. A **record** of what happened. | _Routine_, which is the plan it may have been started from. A workout session never points back at one. | `workout_sessions` table |
 | _Exercise_ | A **definition** of a movement in the catalog ("Back Squat"), not an instance of doing it. | _Exercise entry_ — the performance of it inside a session. | `exercises` table |
 | _Global exercise_ | A seeded catalog exercise, visible to every user. `owner_id IS NULL`. | _Custom exercise_ | `exercises` table |
 | _Custom exercise_ | An exercise created by and visible to one user. `owner_id` set. | _Global exercise_ | `exercises` table |
 | _Exercise entry_ | One exercise performed within one workout session, carrying its order in that session and its own notes. The row between session and sets. | _Exercise_ (the definition) | `session_exercises` table |
+| _Routine_ | A reusable, named, ordered list of exercises kept between workouts ("Push Day"). A **plan**, not a record: it holds no reps, no weights and no dates. Starting one copies its exercises into a new workout session, and the two are unrelated from that moment on. | _Workout session_ (what actually happened), and _program_ — nothing here schedules routines across weeks. | `routines` table, `src/server/services/routines.ts` |
+| _Routine exercise_ | One exercise's place in a routine, carrying its order and its own notes. The row between routine and catalog. | _Exercise entry_, which is the same shape one level over in the log and holds sets. | `routine_exercises` table |
 | _Set_ | The leaf record: reps at a weight, within an exercise entry. Ordered by `position`. | The JavaScript `Set` type — do not name a variable `set` where both could be meant. | `sets` table |
 | _Working set_ | A set that counts toward volume and personal records: `is_warmup = false`. | _Warm-up set_ — stored identically, excluded from every statistic. | `sets.is_warmup` |
 | _Volume_ | Total `reps × weight` across working sets, over a chosen window. Kilograms. | Set count, session count — say so explicitly if that is what is meant. | `findWeeklyVolume` in `src/server/db/queries/progress.ts` |

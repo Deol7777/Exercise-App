@@ -6,8 +6,8 @@
  * 1. Every lookup is scoped by the acting user id, joining back to
  *    `workout_sessions.user_id` for the rows that do not carry it themselves.
  *    A miss and "belongs to somebody else" are the same result on purpose.
- * 2. `position` is assigned here, by the database, as `max(position) + 1`
- *    within one statement — never taken from the request.
+ * 2. `position` is assigned by the database as `max(position) + 1` within one
+ *    statement — never taken from the request. See ./positions.ts.
  *
  * `sets.weight` is `numeric`, which the pg driver hands back as a *string*.
  * This is the one layer that converts it, so nothing above ever sees the string.
@@ -18,6 +18,7 @@ import type { MuscleGroup } from "@/lib/muscle-groups";
 
 import { db } from "..";
 import { exercises, sessionExercises, sets, workoutSessions } from "../schema";
+import { nextPosition } from "./positions";
 
 export type WorkoutSessionRecord = {
   id: string;
@@ -62,9 +63,6 @@ const sessionColumns = {
 /** The driver returns `numeric` as a string; this is the only place it stops being one. */
 const toKilograms = (weight: string) => Number(weight);
 
-const nextPosition = (column: typeof sessionExercises.position | typeof sets.position, scope: ReturnType<typeof eq>) =>
-  sql<number>`(select coalesce(max(${column}), 0) + 1 from ${column.table} where ${scope})`;
-
 // --- workout sessions -------------------------------------------------------
 
 export async function insertWorkoutSession(input: {
@@ -82,6 +80,52 @@ export async function insertWorkoutSession(input: {
     .returning(sessionColumns);
 
   return row;
+}
+
+/**
+ * Creates a workout session already holding `exercises`, in order — what
+ * starting a routine does.
+ *
+ * One transaction, and one multi-row insert for the entries. Positions are
+ * written as 1..n rather than derived through `nextPosition`, which is safe
+ * *only* because the session was created empty two statements earlier and
+ * nothing else can hold a reference to it yet. They are still server-derived;
+ * the caller passes exercises, never positions.
+ *
+ * A loop of `insertExerciseEntry` calls would be the obvious alternative and is
+ * wrong here: awaited in parallel they all read the same `max(position) + 1`
+ * and collide on `session_exercises_position_unique`, and awaited in sequence
+ * they are n round trips that can still half-succeed.
+ */
+export async function insertWorkoutSessionWithExercises(input: {
+  userId: string;
+  startedAt?: Date;
+  notes?: string | null;
+  exercises: { exerciseId: string; notes: string | null }[];
+}): Promise<WorkoutSessionRecord> {
+  return db.transaction(async (tx) => {
+    const [session] = await tx
+      .insert(workoutSessions)
+      .values({
+        userId: input.userId,
+        ...(input.startedAt ? { startedAt: input.startedAt } : {}),
+        notes: input.notes ?? null,
+      })
+      .returning(sessionColumns);
+
+    if (input.exercises.length > 0) {
+      await tx.insert(sessionExercises).values(
+        input.exercises.map((exercise, index) => ({
+          workoutSessionId: session.id,
+          exerciseId: exercise.exerciseId,
+          notes: exercise.notes,
+          position: index + 1,
+        })),
+      );
+    }
+
+    return session;
+  });
 }
 
 export async function findWorkoutSession(

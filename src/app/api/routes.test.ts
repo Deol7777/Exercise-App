@@ -31,6 +31,17 @@ import {
 } from "./workout-sessions/[id]/exercises/route";
 import { POST as postSet } from "./exercise-entries/[id]/sets/route";
 import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
+import { GET as getRoutines, POST as postRoutine } from "./routines/route";
+import {
+  DELETE as deleteRoutine,
+  GET as getRoutine,
+  PATCH as patchRoutine,
+} from "./routines/[id]/route";
+import {
+  PATCH as patchRoutineOrder,
+  POST as postRoutineExercise,
+} from "./routines/[id]/exercises/route";
+import { DELETE as deleteRoutineExercise } from "./routine-exercises/[id]/route";
 import { GET as getRecords } from "./progress/personal-records/route";
 import { DELETE as deleteMe, GET as getMe, PATCH as patchMe } from "./users/me/route";
 
@@ -414,5 +425,193 @@ describe("the catalog over HTTP", () => {
 
     expect((await postExercise(json("/api/exercises", "POST", body))).status).toBe(201);
     expect((await postExercise(json("/api/exercises", "POST", body))).status).toBe(409);
+  });
+});
+
+describe("routines over HTTP", () => {
+  /** A routine holding `names`, and the parsed body of its detail read. */
+  async function routineOf(userId: string, name: string, names: string[]) {
+    const created = await postRoutine(json("/api/routines", "POST", { name }));
+    const { id } = (await created.json()) as { id: string };
+
+    for (const exercise of names) {
+      await postRoutineExercise(
+        json(`/api/routines/${id}/exercises`, "POST", {
+          exerciseId: await globalExercise(userId, exercise),
+        }),
+        context(id),
+      );
+    }
+
+    return id;
+  }
+
+  it("answers 401 everywhere without a session", async () => {
+    signedInAs(null);
+
+    const responses = await Promise.all([
+      getRoutines(),
+      postRoutine(json("/api/routines", "POST", { name: "Push Day" })),
+      getRoutine(json(`/api/routines/${UNUSED_UUID}`, "GET"), context(UNUSED_UUID)),
+      patchRoutine(json(`/api/routines/${UNUSED_UUID}`, "PATCH", { name: "x" }), context(UNUSED_UUID)),
+      deleteRoutine(json(`/api/routines/${UNUSED_UUID}`, "DELETE"), context(UNUSED_UUID)),
+      postRoutineExercise(
+        json(`/api/routines/${UNUSED_UUID}/exercises`, "POST", { exerciseId: UNUSED_UUID }),
+        context(UNUSED_UUID),
+      ),
+      patchRoutineOrder(
+        json(`/api/routines/${UNUSED_UUID}/exercises`, "PATCH", { order: [UNUSED_UUID] }),
+        context(UNUSED_UUID),
+      ),
+      deleteRoutineExercise(
+        json(`/api/routine-exercises/${UNUSED_UUID}`, "DELETE"),
+        context(UNUSED_UUID),
+      ),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([
+      401, 401, 401, 401, 401, 401, 401, 401,
+    ]);
+  });
+
+  it("answers 404 for a malformed id and for one that is not this user's", async () => {
+    const owner = await createUser();
+    signedInAs(owner);
+    const routineId = await routineOf(owner, "Push Day", ["Barbell Bench Press"]);
+
+    signedInAs(await createUser());
+
+    const responses = await Promise.all([
+      getRoutine(json(`/api/routines/${NOT_A_UUID}`, "GET"), context(NOT_A_UUID)),
+      getRoutine(json(`/api/routines/${routineId}`, "GET"), context(routineId)),
+      patchRoutine(json(`/api/routines/${routineId}`, "PATCH", { name: "Mine" }), context(routineId)),
+      deleteRoutine(json(`/api/routines/${routineId}`, "DELETE"), context(routineId)),
+      deleteRoutineExercise(
+        json(`/api/routine-exercises/${NOT_A_UUID}`, "DELETE"),
+        context(NOT_A_UUID),
+      ),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404, 404]);
+  });
+
+  it("answers 422 for a body that fails its schema", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+    const routineId = await routineOf(userId, "Push Day", []);
+
+    const responses = await Promise.all([
+      postRoutine(json("/api/routines", "POST", { name: "   " })),
+      postRoutine(json("/api/routines", "POST", {})),
+      patchRoutine(json(`/api/routines/${routineId}`, "PATCH", {}), context(routineId)),
+      postRoutineExercise(
+        json(`/api/routines/${routineId}/exercises`, "POST", { exerciseId: NOT_A_UUID }),
+        context(routineId),
+      ),
+      patchRoutineOrder(
+        json(`/api/routines/${routineId}/exercises`, "PATCH", { order: [] }),
+        context(routineId),
+      ),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([422, 422, 422, 422, 422]);
+  });
+
+  it("answers 409 for a duplicate routine name", async () => {
+    signedInAs(await createUser());
+    const body = { name: "Push Day" };
+
+    expect((await postRoutine(json("/api/routines", "POST", body))).status).toBe(201);
+    expect((await postRoutine(json("/api/routines", "POST", body))).status).toBe(409);
+  });
+
+  it("creates, reads, reorders and deletes over HTTP", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+    const routineId = await routineOf(userId, "Push Day", ["Barbell Bench Press", "Dip"]);
+
+    const listed = (await (await getRoutines()).json()) as { exerciseCount: number }[];
+    expect(listed).toMatchObject([{ exerciseCount: 2 }]);
+
+    const detail = (await (
+      await getRoutine(json(`/api/routines/${routineId}`, "GET"), context(routineId))
+    ).json()) as { exercises: { id: string; exercise: { name: string } }[] };
+    expect(detail.exercises.map((line) => line.exercise.name)).toEqual([
+      "Barbell Bench Press",
+      "Dip",
+    ]);
+
+    const reversed = [...detail.exercises].reverse().map((line) => line.id);
+    const reorder = await patchRoutineOrder(
+      json(`/api/routines/${routineId}/exercises`, "PATCH", { order: reversed }),
+      context(routineId),
+    );
+    expect(reorder.status).toBe(200);
+
+    /** A partial order is a 422, not a silent truncation of the routine. */
+    const partial = await patchRoutineOrder(
+      json(`/api/routines/${routineId}/exercises`, "PATCH", { order: [reversed[0]] }),
+      context(routineId),
+    );
+    expect(partial.status).toBe(422);
+
+    const removed = await deleteRoutineExercise(
+      json(`/api/routine-exercises/${detail.exercises[0].id}`, "DELETE"),
+      context(detail.exercises[0].id),
+    );
+    expect(removed.status).toBe(204);
+
+    const deleted = await deleteRoutine(
+      json(`/api/routines/${routineId}`, "DELETE"),
+      context(routineId),
+    );
+    expect(deleted.status).toBe(204);
+    expect((await (await getRoutines()).json()) as unknown[]).toEqual([]);
+  });
+});
+
+describe("starting a workout from a routine over HTTP", () => {
+  it("returns 201 and a session holding the routine's exercises", async () => {
+    const userId = await createUser();
+    signedInAs(userId);
+
+    const created = await postRoutine(json("/api/routines", "POST", { name: "Push Day" }));
+    const { id: routineId } = (await created.json()) as { id: string };
+    for (const name of ["Barbell Bench Press", "Dip"]) {
+      await postRoutineExercise(
+        json(`/api/routines/${routineId}/exercises`, "POST", {
+          exerciseId: await globalExercise(userId, name),
+        }),
+        context(routineId),
+      );
+    }
+
+    const started = await postSession(json("/api/workout-sessions", "POST", { routineId }));
+    expect(started.status).toBe(201);
+    const { id: sessionId } = (await started.json()) as { id: string };
+
+    const detail = (await (
+      await getSession(json(`/api/workout-sessions/${sessionId}`, "GET"), context(sessionId))
+    ).json()) as { exercises: { exercise: { name: string } }[] };
+    expect(detail.exercises.map((entry) => entry.exercise.name)).toEqual([
+      "Barbell Bench Press",
+      "Dip",
+    ]);
+  });
+
+  it("answers 404 for another user's routine, and 422 for a malformed one", async () => {
+    const owner = await createUser();
+    signedInAs(owner);
+    const created = await postRoutine(json("/api/routines", "POST", { name: "Push Day" }));
+    const { id: routineId } = (await created.json()) as { id: string };
+
+    signedInAs(await createUser());
+
+    expect(
+      (await postSession(json("/api/workout-sessions", "POST", { routineId }))).status,
+    ).toBe(404);
+    expect(
+      (await postSession(json("/api/workout-sessions", "POST", { routineId: NOT_A_UUID }))).status,
+    ).toBe(422);
   });
 });

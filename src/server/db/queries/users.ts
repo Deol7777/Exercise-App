@@ -8,7 +8,7 @@ import type { Theme } from "@/lib/theme";
 import type { WeightUnit } from "@/lib/weight";
 
 import { db } from "..";
-import { exercises, users, workoutSessions } from "../schema";
+import { exercises, routines, users, workoutSessions } from "../schema";
 
 /** Email is stored as given but matched case-insensitively; addresses are not case-sensitive in practice. */
 const emailMatches = (email: string) => sql`lower(${users.email}) = lower(${email})`;
@@ -109,6 +109,12 @@ export async function deleteAccount(userId: string): Promise<boolean> {
     if (!user) return false;
 
     await tx.delete(workoutSessions).where(eq(workoutSessions.userId, userId));
+    /**
+     * Before the custom exercises they point at. The cascade from `users` would
+     * cover this on its own, but every delete here is spelled out on purpose —
+     * an order that only works by accident is one schema change from not.
+     */
+    await tx.delete(routines).where(eq(routines.userId, userId));
     await tx.delete(exercises).where(eq(exercises.ownerId, userId));
     await tx.delete(users).where(eq(users.id, userId));
 

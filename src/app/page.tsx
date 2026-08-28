@@ -14,6 +14,7 @@ import { fromKilograms, type WeightUnit } from "@/lib/weight";
 import { auth } from "@/server/auth";
 import { isDomainError } from "@/server/errors";
 import { getTrainingSummary } from "@/server/services/progress";
+import { listRoutinesFor } from "@/server/services/routines";
 import { getActiveWorkoutSessionDetail } from "@/server/services/training";
 import { getWeightUnit } from "@/server/services/users";
 
@@ -28,9 +29,10 @@ export default async function HomePage() {
   if (!session?.user?.id || !unit) return <SignedOutLanding />;
 
   const userId = session.user.id;
-  const [active, summary] = await Promise.all([
+  const [active, summary, routines] = await Promise.all([
     getActiveWorkoutSessionDetail(userId),
     getTrainingSummary(userId),
+    listRoutinesFor(userId),
   ]);
 
   /**
@@ -127,6 +129,7 @@ export default async function HomePage() {
         <StartWorkoutButton
           hasActiveSession={Boolean(active)}
           trainedToday={Boolean(summary.today?.endedAt)}
+          routineCount={routines.length}
         />
       </div>
 

@@ -11,7 +11,8 @@ import { z } from "zod";
 
 import { MUSCLE_GROUPS } from "../muscle-groups";
 
-const notes = z.string().trim().max(2_000, "Keep notes under 2000 characters.");
+/** Shared with the routine schemas next door. */
+export const notes = z.string().trim().max(2_000, "Keep notes under 2000 characters.");
 
 /** `numeric(6, 2)` in kilograms: four digits before the point, two after. */
 const WEIGHT_MAX_KG = 9_999.99;
@@ -20,6 +21,12 @@ export const createWorkoutSessionSchema = z.object({
   /** Defaults to now in the database when omitted; sent only when back-dating. */
   startedAt: z.iso.datetime({ offset: true }).optional(),
   notes: notes.optional(),
+  /**
+   * Start from a routine: its exercises are copied into the new session. One
+   * start endpoint rather than two, because both paths need the identical
+   * one-open-session and no-future-start guards.
+   */
+  routineId: z.uuid("Pick a routine.").optional(),
 });
 
 /**

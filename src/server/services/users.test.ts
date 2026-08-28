@@ -7,9 +7,10 @@ import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { db } from "../db";
-import { exercises, sets, signInAttempts, workoutSessions } from "../db/schema";
+import { exercises, routines, sets, signInAttempts, workoutSessions } from "../db/schema";
 import { GLOBAL_EXERCISES } from "../db/seed-data";
 import { createCustomExercise } from "./exercises";
+import { addRoutineExercise, createRoutine } from "./routines";
 import { addExerciseEntry, logSet, startWorkoutSession } from "./training";
 import {
   deleteAccount,
@@ -251,7 +252,7 @@ describe("the sign-in throttle", () => {
 });
 
 describe("deleting an account", () => {
-  it("takes the workouts, sets and custom exercises with it", async () => {
+  it("takes the workouts, sets, routines and custom exercises with it", async () => {
     const user = await registerUser({ email: "leaving@example.test", password });
 
     const custom = await createCustomExercise(user.id, {
@@ -261,6 +262,10 @@ describe("deleting an account", () => {
     const session = await startWorkoutSession(user.id);
     const entry = await addExerciseEntry(user.id, session.id, { exerciseId: custom.id });
     await logSet(user.id, entry.id, { reps: 5, weight: 100 });
+
+    /** A routine pointing at that same custom exercise, so the delete order has to be right. */
+    const routine = await createRoutine(user.id, { name: "Push Day" });
+    await addRoutineExercise(user.id, routine.id, { exerciseId: custom.id });
 
     await deleteAccount(user.id);
 
@@ -278,8 +283,12 @@ describe("deleting an account", () => {
       .from(exercises)
       .where(eq(exercises.ownerId, user.id));
     const [{ count: setCount }] = await db.select({ count: sql<number>`count(*)::int` }).from(sets);
+    const [{ count: routineCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(routines)
+      .where(eq(routines.userId, user.id));
 
-    expect([sessionCount, customCount, setCount]).toEqual([0, 0, 0]);
+    expect([sessionCount, customCount, setCount, routineCount]).toEqual([0, 0, 0, 0]);
     expect(await verifyCredentials({ email: "leaving@example.test", password })).toBeNull();
   });
 

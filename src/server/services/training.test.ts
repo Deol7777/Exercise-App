@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { createUser, globalExercise } from "@/test/factories";
 
 import { DomainError } from "../errors";
+import { addRoutineExercise, createRoutine, getRoutine, removeRoutineExercise } from "./routines";
 import {
   addExerciseEntry,
   editSet,
@@ -20,6 +21,7 @@ import {
   removeSet,
   removeWorkoutSession,
   startWorkoutSession,
+  startWorkoutSessionFromRoutine,
 } from "./training";
 
 /** Every domain failure is asserted by code, not message, so wording can change freely. */
@@ -396,5 +398,95 @@ describe("ownership", () => {
 
     expect(await codeOf(() => getWorkoutSession(userId, session.id))).toBe("not_found");
     expect(await codeOf(() => removeSet(userId, set.id))).toBe("not_found");
+  });
+});
+
+describe("starting a workout from a routine", () => {
+  /** A routine holding `names`, in that order. */
+  async function routineOf(userId: string, name: string, names: string[]) {
+    const routine = await createRoutine(userId, { name });
+    for (const exercise of names) {
+      await addRoutineExercise(userId, routine.id, {
+        exerciseId: await globalExercise(userId, exercise),
+      });
+    }
+    return routine;
+  }
+
+  it("copies the routine's exercises, in order, with no sets", async () => {
+    const userId = await createUser();
+    const routine = await routineOf(userId, "Push Day", [
+      "Barbell Bench Press",
+      "Overhead Press",
+      "Dip",
+    ]);
+
+    const session = await startWorkoutSessionFromRoutine(userId, routine.id);
+
+    const detail = await getWorkoutSession(userId, session.id);
+    expect(detail.exercises.map((entry) => entry.exercise.name)).toEqual([
+      "Barbell Bench Press",
+      "Overhead Press",
+      "Dip",
+    ]);
+    expect(detail.exercises.map((entry) => entry.position)).toEqual([1, 2, 3]);
+    expect(detail.exercises.every((entry) => entry.sets.length === 0)).toBe(true);
+  });
+
+  it("copies, so editing the routine afterwards leaves the session alone", async () => {
+    const userId = await createUser();
+    const routine = await routineOf(userId, "Push Day", ["Barbell Bench Press", "Dip"]);
+    const session = await startWorkoutSessionFromRoutine(userId, routine.id);
+
+    const [, dip] = (await getRoutine(userId, routine.id)).exercises;
+    await removeRoutineExercise(userId, dip.id);
+    await addRoutineExercise(userId, routine.id, {
+      exerciseId: await globalExercise(userId, "Cable Fly"),
+    });
+
+    const detail = await getWorkoutSession(userId, session.id);
+    expect(detail.exercises.map((entry) => entry.exercise.name)).toEqual([
+      "Barbell Bench Press",
+      "Dip",
+    ]);
+  });
+
+  it("starts an empty session from an empty routine", async () => {
+    const userId = await createUser();
+    const routine = await createRoutine(userId, { name: "Someday" });
+
+    const session = await startWorkoutSessionFromRoutine(userId, routine.id);
+
+    expect((await getWorkoutSession(userId, session.id)).exercises).toEqual([]);
+  });
+
+  it("obeys the one-open-session rule, and leaves no session behind when it refuses", async () => {
+    const userId = await createUser();
+    const routine = await routineOf(userId, "Push Day", ["Barbell Bench Press"]);
+    const open = await startWorkoutSession(userId);
+
+    expect(await codeOf(() => startWorkoutSessionFromRoutine(userId, routine.id))).toBe("conflict");
+    expect(await getActiveWorkoutSession(userId)).toMatchObject({ id: open.id });
+  });
+
+  it("refuses a stranger's routine as not_found, without starting anything", async () => {
+    const owner = await createUser();
+    const stranger = await createUser();
+    const routine = await routineOf(owner, "Push Day", ["Barbell Bench Press"]);
+
+    expect(await codeOf(() => startWorkoutSessionFromRoutine(stranger, routine.id))).toBe(
+      "not_found",
+    );
+    expect(await getActiveWorkoutSession(stranger)).toBeNull();
+  });
+
+  it("refuses a start in the future", async () => {
+    const userId = await createUser();
+    const routine = await routineOf(userId, "Push Day", ["Barbell Bench Press"]);
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+
+    expect(
+      await codeOf(() => startWorkoutSessionFromRoutine(userId, routine.id, { startedAt: tomorrow })),
+    ).toBe("invalid");
   });
 });

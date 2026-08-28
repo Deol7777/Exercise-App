@@ -39,6 +39,21 @@ weekly volume by muscle group), the `/api/progress/**` and
 `/history/[id]` and `/progress` pages. The logging screen shows "last time" per
 exercise from the same endpoint.
 
+**Routines are built**: `routines` and `routine_exercises` (migration
+`0004_serious_sumo`), `src/server/services/routines.ts` over
+`db/queries/routines.ts`, the REST surface under `/api/routines` and
+`/api/routine-exercises`, and the `/routines` and `/routines/[id]` screens that
+drive them. A *routine* is a reusable named list of exercises — a plan, not a
+record; check `docs/glossary.md` before reaching for the word "session" for one.
+Starting one **copies** its exercises into a new workout session and nothing
+links them afterwards, so editing a routine cannot rewrite history. A **Start
+routine** link on the home screen and `/log` opens `/routines/start`, one card
+per routine, and tapping a card is what starts it — there is no start control on
+`/routines` itself. Starting goes through the same `POST /api/workout-sessions`
+as a plain start (with a `routineId`), so both share the one-open-session
+guard. `/browse` was a
+placeholder and is gone; the tab is now Routines.
+
 **Tests exist for the service layer**: Vitest against a local `postgres:17`
 from `docker-compose.yml` on port **5433** — never Neon, and the suite refuses
 to start against a non-localhost `DATABASE_URL`. `src/test/global-setup.ts`
@@ -61,9 +76,10 @@ below `:root` names a component, and a component that hard-codes a colour is
 right in one theme and wrong in five (ADR 0017). Reading the theme in the layout
 makes every route request-rendered.
 
-**End-to-end tests exist**: three Playwright journeys in `e2e/` — sign up and
-log a workout, correct a set and switch to pounds, and one user's log staying
-away from another. They run a real server on port 3100 pointed at the Docker
+**End-to-end tests exist**: Playwright journeys in `e2e/` — signing up and
+logging a workout, correcting a set and switching to pounds, one user's log
+staying away from another, account deletion, and building a routine and starting
+it (`e2e/routines.spec.ts`). They run a real server on port 3100 pointed at the Docker
 database, and are the only place Auth.js itself is exercised.
 
 **Accounts can be deleted**: `DELETE /api/users/me`, a hard delete in one
@@ -84,8 +100,10 @@ and unknown address are deliberately indistinguishable. `BCRYPT_COST` is 4 under
 `NODE_ENV=test` and 12 everywhere else.
 
 Still missing: **no component-level test runner** (no jsdom, no Testing
-Library), so components off those three paths are verified by hand. Sets cannot
-be reordered (exercise entries can).
+Library), so components off the end-to-end paths are verified by hand. Sets
+cannot be reordered (exercise entries and routine exercises can). The exercise
+catalog has no screen of its own — it is reachable only through the two pickers
+that add an exercise to something.
 
 ## Commands
 
