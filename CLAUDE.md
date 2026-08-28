@@ -51,6 +51,16 @@ status mapping, cross-user isolation) with `currentUserId` mocked.
 `0001_tidy_makkari`) with all conversion in `src/lib/weight.ts`, called from
 components only. The database is still kilograms everywhere.
 
+**Colour is themed**: six palettes (`rose` the designed default, `rose-dark`,
+`ink`, `forest`, `cobalt`, `court`), listed in `src/lib/theme.ts`, stored on
+`users.theme` (migration `0003_complex_tomorrow_man`), chosen in Settings and
+applied by the root layout as `data-theme` on `<html>` — plus the `dark` class
+for the two dark ones, which is what shadcn's `dark:` utilities key on. A theme
+is a block of role-token values in `globals.css` and nothing else: no selector
+below `:root` names a component, and a component that hard-codes a colour is
+right in one theme and wrong in five (ADR 0017). Reading the theme in the layout
+makes every route request-rendered.
+
 **End-to-end tests exist**: three Playwright journeys in `e2e/` — sign up and
 log a workout, correct a set and switch to pounds, and one user's log staying
 away from another. They run a real server on port 3100 pointed at the Docker
