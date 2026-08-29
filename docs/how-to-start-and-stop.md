@@ -14,11 +14,12 @@ section explaining how to start and stop it.
 | Work on the app | `./scripts/start.sh` |
 | Stop everything | `./scripts/stop.sh` |
 | Run the tests | `./scripts/test.sh` |
+| Push it live | `vercel --prod` |
 
 ## The pieces
 
-There are five. Only two of them need starting for normal work, and one of those
-lives in the cloud and starts itself.
+There are six. Only two of them need starting for normal work, and one of those
+lives in the cloud and starts itself. The sixth is not on your machine at all.
 
 | Piece | Where it runs | Port | Do I start it? |
 | --- | --- | --- | --- |
@@ -27,6 +28,7 @@ lives in the cloud and starts itself.
 | Docker Postgres (test database) | Your machine, in Docker | 5433 | Only for tests |
 | Playwright's own Next.js server | Your machine | 3100 | No, the test run starts it |
 | Drizzle Studio (database browser) | Your machine | 4983 | Only when you want it |
+| The deployed app | Vercel's cloud | — | No, it is always up |
 
 ### 1. The Next.js app
 
@@ -139,6 +141,46 @@ npm run db:studio                # or: ./scripts/start.sh --with-studio
 
 It opens at https://local.drizzle.studio and talks to port 4983 on your machine.
 Stop it with `Ctrl+C`, or `./scripts/stop.sh`.
+
+### 6. The deployed app — Vercel
+
+The app is live at **https://exercise-app-jade.vercel.app**, as the Vercel
+project `gurnoor4/exercise-app`. There is nothing to start or stop: Vercel keeps
+it up, and it scales to nothing when idle.
+
+It reads and writes the **same Neon database** as `npm run dev`, so anything you
+log locally shows up in production and the other way round. There is no separate
+production database.
+
+Deploying is a command, not a git push — the GitHub repository is not connected
+to the Vercel project yet, so pushing to `main` deploys nothing:
+
+```bash
+vercel --prod           # build and deploy to the live URL
+vercel                  # deploy a preview URL instead, nothing public changes
+vercel logs <url>       # what the running app printed
+vercel inspect <url>    # build logs and status for one deployment
+```
+
+To make `git push` deploy on its own, connect the repository once in the Vercel
+dashboard (Project → Settings → Git). Until then, `vercel --prod` from your
+machine is the only way anything reaches the live URL.
+
+Environment variables live in the Vercel project, not in `.env.local`:
+`DATABASE_URL`, `DATABASE_URL_UNPOOLED` and `AUTH_SECRET` are set for both
+Production and Preview. `AUTH_SECRET` is a **different** value in the cloud than
+on your machine, which is deliberate — it means a session cookie from localhost
+is not valid in production. `AUTH_URL` is not set and does not need to be;
+Auth.js reads the deployment's own origin.
+
+```bash
+vercel env ls                       # what is set, without revealing values
+vercel env add NAME production      # add or replace one, value read from stdin
+```
+
+Migrations are **not** run by the deploy. Vercel only builds and serves; if you
+add a migration, apply it yourself with `npm run db:migrate` before deploying the
+code that expects it.
 
 ## Running the tests
 
