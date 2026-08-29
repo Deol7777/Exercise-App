@@ -208,6 +208,7 @@ test("keeps one user's log away from another", async ({ page, context }) => {
   /** Somebody else's exercise entry does not exist, rather than being refused. */
   const response = await page.goto(entryUrl);
   expect(response?.status()).toBe(404);
+  await expect(page.getByText("Back Squat")).toHaveCount(0);
 });
 
 test("deletes an account, and everything in it", async ({ page }) => {

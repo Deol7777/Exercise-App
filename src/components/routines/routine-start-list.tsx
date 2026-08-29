@@ -41,6 +41,8 @@ export function RoutineStartList({ routines }: { routines: RoutineListItem[] }) 
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.activeWorkoutSession });
+      /** As on the home button: drop the cached, session-less `/log` first. */
+      router.refresh();
       router.push("/log");
     },
     onError: (caught: unknown) => {

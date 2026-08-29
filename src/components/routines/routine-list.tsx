@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import type { RoutineListItem } from "@/lib/types/routines";
  * them.
  */
 export function RoutineList({ initialData }: { initialData: RoutineListItem[] }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +59,14 @@ export function RoutineList({ initialData }: { initialData: RoutineListItem[] })
     onSuccess: async () => {
       setName("");
       await queryClient.invalidateQueries({ queryKey: queryKeys.routines });
+      /**
+       * Whether a routine exists is the whole of what `StartRoutineLink` keys
+       * on, and that link lives on Home and `/log` — other tabs, which the
+       * router cache may be holding from before this routine existed
+       * (`staleTimes.dynamic`). Without this, the first routine someone creates
+       * leaves both screens with no way to start it for thirty seconds.
+       */
+      router.refresh();
     },
     onError: (caught: unknown) =>
       setError(caught instanceof ApiError ? caught.message : "Could not create that routine."),
@@ -69,6 +79,8 @@ export function RoutineList({ initialData }: { initialData: RoutineListItem[] })
     onSuccess: async () => {
       setPendingDelete(null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.routines });
+      /** Deleting the last one takes the link away again. */
+      router.refresh();
     },
     onError: (caught: unknown) => {
       setPendingDelete(null);

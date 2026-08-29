@@ -5,7 +5,6 @@ import { WeightUnitSelect } from "@/components/account/weight-unit-select";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
 import { Surface } from "@/components/ui/surface";
-import { auth } from "@/server/auth";
 
 /**
  * The account controls used to live on the home screen. The references give
@@ -13,9 +12,7 @@ import { auth } from "@/server/auth";
  * show — so they moved here, reached from the gear in the home header.
  */
 export default async function SettingsPage() {
-  const { unit, theme } = await requireAccount();
-  const session = await auth();
-  const email = session?.user?.email ?? null;
+  const { unit, theme, email } = await requireAccount();
 
   return (
     <Screen>

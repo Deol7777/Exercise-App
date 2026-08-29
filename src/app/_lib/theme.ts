@@ -14,14 +14,17 @@ import { cache } from "react";
 import { DEFAULT_THEME, type Theme } from "@/lib/theme";
 import { currentUserId } from "@/server/auth";
 import { isDomainError } from "@/server/errors";
-import { getTheme } from "@/server/services/users";
+
+import { currentPreferences } from "./preferences";
 
 export const currentTheme = cache(async (): Promise<Theme> => {
   const userId = await currentUserId();
   if (!userId) return DEFAULT_THEME;
 
   try {
-    return await getTheme(userId);
+    /** Through `currentPreferences`, not `getTheme`, so the page's own read of
+     *  the same row later in this pass is free rather than a second query. */
+    return (await currentPreferences(userId)).theme;
   } catch (error) {
     if (isDomainError(error) && error.code === "not_found") return DEFAULT_THEME;
     throw error;

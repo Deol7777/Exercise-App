@@ -12,7 +12,7 @@
  * `sets.weight` is `numeric`, which the pg driver hands back as a *string*.
  * This is the one layer that converts it, so nothing above ever sees the string.
  */
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
@@ -410,6 +410,16 @@ export async function deleteSet(userId: string, setId: string): Promise<boolean>
  * One workout session with its exercise entries and their sets, ordered. Three
  * statements rather than one join, so the nesting is assembled here instead of
  * de-duplicated from a wide result set.
+ *
+ * Three statements, but only two *waits*. The sets used to be fetched by
+ * `inArray` over the entry ids, which meant the second query could not be sent
+ * until the first had come back — three round trips deep, on the read behind
+ * both Home and the logging screen. Reaching the same rows through
+ * `session_exercises.workout_session_id` asks the identical question without
+ * needing the ids in hand, so entries and sets go out together.
+ *
+ * `findWorkoutSession` still has to come first: it is the only one of the three
+ * scoped by `user_id`, so it is what makes the other two safe to run at all.
  */
 export async function findWorkoutSessionDetail(
   userId: string,
@@ -418,39 +428,35 @@ export async function findWorkoutSessionDetail(
   const session = await findWorkoutSession(userId, workoutSessionId);
   if (!session) return null;
 
-  const entries = await db
-    .select({
-      id: sessionExercises.id,
-      position: sessionExercises.position,
-      notes: sessionExercises.notes,
-      exerciseId: exercises.id,
-      exerciseName: exercises.name,
-      exerciseMuscleGroup: exercises.muscleGroup,
-    })
-    .from(sessionExercises)
-    .innerJoin(exercises, eq(exercises.id, sessionExercises.exerciseId))
-    .where(eq(sessionExercises.workoutSessionId, workoutSessionId))
-    .orderBy(asc(sessionExercises.position));
+  const [entries, setRows] = await Promise.all([
+    db
+      .select({
+        id: sessionExercises.id,
+        position: sessionExercises.position,
+        notes: sessionExercises.notes,
+        exerciseId: exercises.id,
+        exerciseName: exercises.name,
+        exerciseMuscleGroup: exercises.muscleGroup,
+      })
+      .from(sessionExercises)
+      .innerJoin(exercises, eq(exercises.id, sessionExercises.exerciseId))
+      .where(eq(sessionExercises.workoutSessionId, workoutSessionId))
+      .orderBy(asc(sessionExercises.position)),
 
-  const setRows = entries.length
-    ? await db
-        .select({
-          id: sets.id,
-          sessionExerciseId: sets.sessionExerciseId,
-          position: sets.position,
-          reps: sets.reps,
-          weight: sets.weight,
-          isWarmup: sets.isWarmup,
-        })
-        .from(sets)
-        .where(
-          inArray(
-            sets.sessionExerciseId,
-            entries.map((entry) => entry.id),
-          ),
-        )
-        .orderBy(asc(sets.position))
-    : [];
+    db
+      .select({
+        id: sets.id,
+        sessionExerciseId: sets.sessionExerciseId,
+        position: sets.position,
+        reps: sets.reps,
+        weight: sets.weight,
+        isWarmup: sets.isWarmup,
+      })
+      .from(sets)
+      .innerJoin(sessionExercises, eq(sessionExercises.id, sets.sessionExerciseId))
+      .where(eq(sessionExercises.workoutSessionId, workoutSessionId))
+      .orderBy(asc(sets.position)),
+  ]);
 
   const setsByEntry = new Map<string, SetRecord[]>();
   for (const row of setRows) {

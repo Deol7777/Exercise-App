@@ -9,27 +9,37 @@
  * than a sign-in prompt.
  */
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import type { Theme } from "@/lib/theme";
 import type { WeightUnit } from "@/lib/weight";
-import { currentUserId } from "@/server/auth";
+import { auth } from "@/server/auth";
 import { isDomainError } from "@/server/errors";
-import { getPreferences } from "@/server/services/users";
 
-export async function requireAccount(): Promise<{
+import { currentPreferences } from "./preferences";
+
+/**
+ * Memoized for the pass, so a page and anything it renders can each ask without
+ * paying twice — and `email` comes off the JWT the session already decoded,
+ * which is why Settings does not need a second `auth()` call of its own.
+ */
+export const requireAccount = cache(async function requireAccount(): Promise<{
   userId: string;
+  email: string | null;
   unit: WeightUnit;
   theme: Theme;
 }> {
-  const userId = await currentUserId();
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
   if (!userId) redirect("/sign-in");
 
   try {
-    const { weightUnit, theme } = await getPreferences(userId);
-    return { userId, unit: weightUnit, theme };
+    /** Shared with the root layout's theme read — one query for the row, not two. */
+    const { weightUnit, theme } = await currentPreferences(userId);
+    return { userId, email: session?.user?.email ?? null, unit: weightUnit, theme };
   } catch (error) {
     /** The token refers to an account that no longer exists. */
     if (isDomainError(error) && error.code === "not_found") redirect("/sign-in");
     throw error;
   }
-}
+});

@@ -108,6 +108,41 @@ pickers that add an exercise to something.
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
 
+### Navigation
+
+The five signed-in destinations sit in a `(tabs)` route group. The group is a
+route group, so it changes no URL — `/log` is still `/log` — and it exists for
+one reason: `src/app/(tabs)/layout.tsx` renders the tab bar as a *layout*, which
+means React keeps it mounted across a navigation between tabs and re-renders
+only the page below it. The bar used to be rendered by `Screen`, so it was part
+of every page's own payload and could not paint until that page's data had
+resolved.
+
+`Screen` no longer renders the bar; it is the `<main>` column and nothing else.
+
+**There is deliberately no `loading.tsx` here, and adding one makes the app
+slower.** It was tried and measured. A loading boundary does buy an earlier
+first frame — a skeleton at ~60 ms instead of content at ~120 ms — but the real
+content then arrives at ~850 ms rather than ~120 ms, uniformly, on every route
+in the group and regardless of how many queries that route runs. It buys a
+placeholder 60 ms earlier and charges 580 ms for it. The measurement is in
+`Known rough edges`; re-run it before reaching for a skeleton again.
+
+Home (`/`) is deliberately outside the group. It renders a signed-out landing as
+well as the signed-in screen and a layout cannot tell which one it got, so it
+keeps its own `<TabBar />`. Home↔tab therefore remounts the bar; tab↔tab does
+not.
+
+`experimental.staleTimes.dynamic` in `next.config.ts` lets a visited tab be
+reused from the client router cache for thirty seconds. See `Known rough edges`
+for what that costs.
+
+One preferences row, one query: the root layout needs it for the palette and
+every page needs it for the display unit, so both go through
+`currentPreferences` in `src/app/_lib/preferences.ts`, which is React `cache`
+around the service call. Reading `getPreferences` directly from a page puts the
+second query back.
+
 The wire types the API client works with are declared in
 `src/lib/types/training.ts` rather than re-exported from the service layer: a
 client component may not import from `src/server/**`, and the shapes differ
@@ -229,8 +264,53 @@ settings on Vercel). Two database URLs are always set and never derived from
 each other: a **pooled** URL for the running app, and a **direct** URL for
 drizzle-kit migrations.
 
+`vercel.json` pins functions to `pdx1`, which is `aws-us-west-2` — the region
+the Neon project is in. Without it Vercel defaults to `iad1`, on the other side
+of the country, and every query in a render pays that crossing twice. The two
+values have to move together: putting the database in a new region and leaving
+this one alone is a slow app with nothing obviously wrong with it.
+
 ## Known rough edges
 
+- **A tab can be thirty seconds stale.** `experimental.staleTimes.dynamic = 30`
+  lets the client router reuse a tab you were just on without a server round
+  trip. Training mutations go through TanStack Query, which invalidates *its*
+  cache and knows nothing about the router's — so anything whose effect shows on
+  another tab has to call `router.refresh()` by hand. Four do: the two start
+  buttons (`start-workout-button.tsx`, `routine-start-list.tsx`),
+  `crossTabMutation` in `workout-logger.tsx`, which covers start and finish, and
+  both mutations in `routine-list.tsx` — whether any routine exists is what
+  decides if Home and `/log` offer a way to start one. A new mutation that
+  changes what another tab shows and forgets the refresh fails silently, and
+  only for half a minute, which is the worst way to fail. `e2e/routines.spec.ts`
+  caught exactly that and is the guard against it.
+- **A `loading.tsx` in `(tabs)` costs more than it buys, and the win here is not
+  where it looks.** Measured on a production build against a Postgres delayed to
+  Neon's real round trip from this machine (28 ms), fresh account, five tabs:
+
+  | | first visit (paint / content) | repeat visit | server round trips |
+  | --- | --- | --- | --- |
+  | Before any of this | 120 / 123 ms | 116 / 119 ms | 1 per switch |
+  | `(tabs)` layout + `staleTimes` | 110 / 113 ms | **62 / 65 ms** | **0** |
+  | …plus a `loading.tsx` | 61 / **694** ms | 64 / 68 ms | 0 |
+
+  The whole improvement is the layout and the client router cache. The skeleton
+  contributes nothing to the repeat number and delays real content by ~580 ms on
+  the first visit, uniformly, on routes whose query counts differ by a factor of
+  five — so it is not query work. It also cost the 404 status on the detail
+  routes, because a streamed response commits its status with the shell before
+  the page reaches `notFound()`. Removing it fixed both.
+- **The numbers above are from a local server.** They isolate the framework, not
+  the deployment: `vercel.json` pinning `pdx1` and the query work in
+  `services/progress.ts` and `queries/training.ts` matter in production, where a
+  render crosses the network several times, and are invisible in a benchmark
+  like this one. A dev server is slower again — first visit to a route includes
+  compiling it.
+- **The tab bar is rendered in two places.** `src/app/(tabs)/layout.tsx` for the
+  five tabs, and `src/app/page.tsx` for Home, which cannot join the group
+  because it also renders the signed-out landing. Adding a sixth tab means
+  editing `TABS` in `tab-bar.tsx` and nothing else, but *moving* Home into the
+  group means first giving the landing a route of its own.
 - **`next dev` writes files into the tree.** It regenerates `AGENTS.md` and the
   route types under `.next/types`. On a fresh clone `npx tsc --noEmit` fails
   with `Cannot find name 'LayoutProps'` until `npx next typegen` (or a dev

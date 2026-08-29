@@ -160,7 +160,11 @@ export async function getStrengthProgress(
 ): Promise<StrengthProgress> {
   await getExercise(userId, exerciseId);
 
-  const performed = await findPerformedSets(userId, exerciseId, rangeStart(range, now));
+  return strengthFrom(await findPerformedSets(userId, exerciseId, rangeStart(range, now)));
+}
+
+/** The shaping half, over rows already read. See `getExerciseProgress`. */
+function strengthFrom(performed: PerformedSet[]): StrengthProgress {
   const points = toStrengthPoints(performed);
   const best = points.reduce<StrengthPoint | null>(
     (top, point) => (top === null || isHeavier(point, top) ? point : top),
@@ -386,8 +390,16 @@ export async function getExerciseVolume(
 ): Promise<VolumeSeries> {
   await getExercise(userId, exerciseId);
 
+  return volumeFrom(
+    await findPerformedSets(userId, exerciseId, rangeStart(range, now)),
+    range,
+    now,
+  );
+}
+
+/** The shaping half, over rows already read. See `getExerciseProgress`. */
+function volumeFrom(performed: PerformedSet[], range: Range, now: Date): VolumeSeries {
   const granularity = RANGE_SHAPE[range].granularity;
-  const performed = await findPerformedSets(userId, exerciseId, rangeStart(range, now));
   const totals = new Map<number, BucketVolume>();
 
   for (const set of performed) {
@@ -433,7 +445,11 @@ export type TopSet = {
 export async function getLastTopSet(userId: string, exerciseId: string): Promise<TopSet | null> {
   await getExercise(userId, exerciseId);
 
-  const last = await findLastWorkingSets(userId, exerciseId);
+  return topSetFrom(await findLastWorkingSets(userId, exerciseId));
+}
+
+/** The shaping half, over rows already read. See `getExerciseProgress`. */
+function topSetFrom(last: Awaited<ReturnType<typeof findLastWorkingSets>>): TopSet | null {
   if (!last || last.sets.length === 0) return null;
 
   const weight = Math.max(...last.sets.map((set) => set.weight));
@@ -446,6 +462,42 @@ export async function getLastTopSet(userId: string, exerciseId: string): Promise
     setCount: top.length,
     reps: top.map((set) => set.reps),
     totalSets: last.sets.length,
+  };
+}
+
+/**
+ * Everything the progress screen shows about one lift, in one pass.
+ *
+ * The three reads above are each correct on their own and are what a route
+ * handler wants. Called together they are not: `getStrengthProgress`,
+ * `getExerciseVolume` and `getLastTopSet` each open with the same
+ * `getExercise` ownership check, and the first two then ask `findPerformedSets`
+ * the same question with the same arguments. That is six round trips to answer
+ * with three, over a database in another region.
+ *
+ * So the guard runs once — it is a domain rule, not an accident: an id this
+ * user cannot see is `not_found`, not an empty chart, which is a different
+ * claim — and the two remaining reads go together rather than in sequence.
+ * Strength and volume are then two shapes of the *same* rows, which also means
+ * they can no longer disagree about what was performed.
+ */
+export async function getExerciseProgress(
+  userId: string,
+  exerciseId: string,
+  range: Range = DEFAULT_RANGE,
+  now: Date = new Date(),
+): Promise<{ strength: StrengthProgress; volume: VolumeSeries; topSet: TopSet | null }> {
+  await getExercise(userId, exerciseId);
+
+  const [performed, last] = await Promise.all([
+    findPerformedSets(userId, exerciseId, rangeStart(range, now)),
+    findLastWorkingSets(userId, exerciseId),
+  ]);
+
+  return {
+    strength: strengthFrom(performed),
+    volume: volumeFrom(performed, range, now),
+    topSet: topSetFrom(last),
   };
 }
 

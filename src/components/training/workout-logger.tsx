@@ -89,15 +89,32 @@ export function WorkoutLogger({
       setError(caught instanceof ApiError ? caught.message : fallback),
   });
 
+  /**
+   * The same, for the two mutations whose effect is visible on *other* tabs.
+   *
+   * `staleTimes.dynamic` (next.config.ts) lets a visited tab be reused for
+   * thirty seconds, and TanStack Query's cache is not the router's — so without
+   * this, finishing a workout leaves Home showing an in-progress session it no
+   * longer has. Only these two: a refresh re-renders the server tree, which is
+   * not something to do once per logged set.
+   */
+  const crossTabMutation = (request: () => Promise<unknown>, fallback: string) => ({
+    ...mutation(request, fallback),
+    onSuccess: async () => {
+      await invalidateAll();
+      router.refresh();
+    },
+  });
+
   const start = useMutation(
-    mutation(
+    crossTabMutation(
       () => apiFetch("/api/workout-sessions", { method: "POST", body: JSON.stringify({}) }),
       "Could not start a workout session.",
     ),
   );
 
   const finish = useMutation(
-    mutation(
+    crossTabMutation(
       () =>
         apiFetch(`/api/workout-sessions/${session?.id}`, {
           method: "PATCH",

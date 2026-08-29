@@ -15,11 +15,9 @@ import { parseRange, RANGE_PHRASES, RANGE_SHAPE, RANGES, RANGE_LABELS } from "@/
 import { fromKilograms, type WeightUnit } from "@/lib/weight";
 import { requireAccount } from "@/app/_lib/require-account";
 import {
-  getExerciseVolume,
-  getLastTopSet,
+  getExerciseProgress,
   getLoggedExercises,
   getRecentRecords,
-  getStrengthProgress,
   getVolumeSummary,
   type TopSet,
 } from "@/server/services/progress";
@@ -86,11 +84,18 @@ export default async function ProgressPage({
    */
   const selected = logged.find((exercise) => exercise.exerciseId === parameters.exercise) ?? logged[0] ?? null;
 
-  const [strength, series, topSet] = await Promise.all([
-    selected ? getStrengthProgress(userId, selected.exerciseId, range, now) : null,
-    selected ? getExerciseVolume(userId, selected.exerciseId, range, now) : null,
-    selected ? getLastTopSet(userId, selected.exerciseId) : null,
-  ]);
+  /**
+   * One call rather than three. Asked separately they re-ran the ownership
+   * check three times and read the same performed sets twice — six round trips
+   * for an answer that takes three, on the one wave that cannot start until
+   * `selected` is known.
+   */
+  const detail = selected
+    ? await getExerciseProgress(userId, selected.exerciseId, range, now)
+    : null;
+  const strength = detail?.strength ?? null;
+  const series = detail?.volume ?? null;
+  const topSet = detail?.topSet ?? null;
 
   const options = logged.map((exercise) => ({ id: exercise.exerciseId, name: exercise.name }));
   const query = {

@@ -1,12 +1,16 @@
 import type { ReactNode } from "react";
 
-import { TabBar } from "@/components/nav/tab-bar";
 import { cn } from "@/lib/utils";
 
 /**
  * Every screen behind the tab bar. Mobile first: a single column capped at the
  * width of a large phone, centred once the viewport is wider than that, with
  * the tab bar's height reserved at the bottom so the last card clears it.
+ *
+ * It does not render the tab bar. The bar belongs to `(tabs)/layout.tsx`, which
+ * is a layout precisely so it survives a navigation between tabs instead of
+ * unmounting with the page — rendering it from here put it inside every page's
+ * own payload, so it could not paint until that page's data had resolved.
  */
 export function Screen({
   className,
@@ -15,26 +19,22 @@ export function Screen({
 }: {
   className?: string;
   /**
-   * False for a screen a signed-out visitor can see. The tab bar leads to five
-   * pages that all require an account, so offering it to someone without one is
-   * a maze, not navigation.
+   * False for a screen a signed-out visitor can see: no tab bar is rendered
+   * above it, so there is no bar height to reserve at the bottom.
    */
   chrome?: boolean;
   children: ReactNode;
 }) {
   return (
-    <>
-      <main
-        className={cn(
-          "mx-auto w-full max-w-md flex-1 px-6 pt-14",
-          chrome && "pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom)+1.5rem)]",
-          className,
-        )}
-      >
-        {children}
-      </main>
-      {chrome ? <TabBar /> : null}
-    </>
+    <main
+      className={cn(
+        "mx-auto w-full max-w-md flex-1 px-6 pt-14",
+        chrome && "pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom)+1.5rem)]",
+        className,
+      )}
+    >
+      {children}
+    </main>
   );
 }
 

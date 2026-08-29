@@ -41,6 +41,12 @@ export function StartWorkoutButton({
     onMutate: () => setError(null),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.activeWorkoutSession });
+      /**
+       * `/log` may already be sitting in the router cache from a moment ago
+       * (`staleTimes.dynamic`), rendered when there was no session to show.
+       * Refresh before the push or the new workout arrives at an empty screen.
+       */
+      router.refresh();
       router.push("/log");
     },
     onError: (caught: unknown) =>
