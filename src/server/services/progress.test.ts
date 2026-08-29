@@ -241,6 +241,38 @@ describe("a month of history", () => {
     expect(minutes).toBe(70);
   });
 
+  /**
+   * The bug this was written for: a start that was tapped and abandoned is a
+   * real row with a real timestamp, and it is the *earliest* of the day. The
+   * cell linked to it, so tapping a filled day read back as "started and left
+   * alone" — the opposite of what filling the cell claimed.
+   */
+  it("passes over an empty session when picking what the cell links to", async () => {
+    const userId = await createUser();
+    const abandoned = await marchSession(userId, 9, { hour: 6, minutes: 1 });
+    const trained = await marchSession(userId, 9, { hour: 8, minutes: 50 });
+    await addExerciseEntry(userId, trained.id, {
+      exerciseId: await globalExercise(userId, "Barbell Bench Press"),
+    });
+
+    const { days, workouts } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days[0]).toMatchObject({ day: 9, sessionCount: 2, workoutSessionId: trained.id });
+    expect(days[0].workoutSessionId).not.toBe(abandoned.id);
+    /** Both are still counted: this picks the link, it does not filter the day. */
+    expect(workouts).toBe(2);
+  });
+
+  it("falls back to the earliest when every session of the day is empty", async () => {
+    const userId = await createUser();
+    const first = await marchSession(userId, 10, { hour: 7, minutes: 2 });
+    await marchSession(userId, 10, { hour: 19, minutes: 2 });
+
+    const { days } = await getMonthOfHistory(userId, MONTH);
+
+    expect(days[0]).toMatchObject({ day: 10, sessionCount: 2, workoutSessionId: first.id });
+  });
+
   it("counts an unfinished session as a workout but adds no time", async () => {
     const userId = await createUser();
     await marchSession(userId, 5, { minutes: null });

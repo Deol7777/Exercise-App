@@ -9,7 +9,7 @@
  * Warm-up sets are excluded from every statistic — that is what
  * `is_warmup = false` means (docs/glossary.md, "working set").
  */
-import { and, desc, eq, gte, isNotNull, lt, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, exists, gte, isNotNull, lt, type SQL, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 import type { Granularity } from "@/lib/range";
@@ -536,11 +536,31 @@ export type MonthDay = {
   /** 1–31, in the app's timezone (src/lib/time-zone.ts). */
   day: number;
   sessionCount: number;
-  /** The earliest session of that day: where tapping the cell goes. */
+  /**
+   * Where tapping the cell goes: the earliest session of that day that has at
+   * least one exercise entry, and only if every session of the day is empty,
+   * the earliest of those.
+   */
   workoutSessionId: string;
   /** Total seconds of *finished* sessions that day; a running one adds none. */
   seconds: number;
 };
+
+/**
+ * Whether a session has anything logged under it.
+ *
+ * Written with drizzle's `exists` rather than a `sql` template on purpose: a
+ * template renders bare column names, so `where workout_session_id = id` would
+ * bind *both* sides inside the sub-select and compare `session_exercises` to
+ * itself — false for every row, silently, with the sort falling back to the
+ * timestamp and the bug still there. `exists` qualifies both sides.
+ */
+const hasEntries = exists(
+  db
+    .select({ one: sql`1` })
+    .from(sessionExercises)
+    .where(eq(sessionExercises.workoutSessionId, workoutSessions.id)),
+);
 
 /**
  * Every day of one month that has a workout on it, with the counts the history
@@ -555,6 +575,14 @@ export type MonthDay = {
  *
  * Unfinished sessions count as workouts and contribute no time, which is why
  * `sum` is over a filtered expression instead of the whole group.
+ *
+ * The cell links to the earliest session of the day *that has something in it*,
+ * not simply the earliest. A start that was tapped and abandoned is a real row
+ * with a real timestamp, so ordering on `started_at` alone handed the cell to
+ * the empty one and the day read back as "started and left alone" — which is
+ * the opposite of what filling the cell claimed. `has_entries` is a sort key
+ * rather than a filter on purpose: a day whose sessions are *all* empty still
+ * has somewhere to go, and `sessionCount` still counts what was started.
  */
 export async function findMonthOfSessions(
   userId: string,
@@ -567,7 +595,7 @@ export async function findMonthOfSessions(
         "day",
       ),
       sessionCount: sql<number>`count(*)::int`,
-      workoutSessionId: sql<string>`(array_agg(${workoutSessions.id} order by ${workoutSessions.startedAt}))[1]`,
+      workoutSessionId: sql<string>`(array_agg(${workoutSessions.id} order by ${hasEntries} desc, ${workoutSessions.startedAt} asc))[1]`,
       seconds: sql<number>`coalesce(sum(extract(epoch from (${workoutSessions.endedAt} - ${workoutSessions.startedAt}))), 0)::float8`,
     })
     .from(workoutSessions)

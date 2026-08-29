@@ -94,9 +94,10 @@ export function MonthCalendar({
  * One square of the grid. A worked day is a link; an empty one is text, because
  * there is nothing behind it to navigate to.
  *
- * Two or more sessions on the same day link to the first of them and say so in
- * the accessible name — the calendar has one cell per day and the list below is
- * where a second session of the day is visible as its own row.
+ * Two or more sessions on the same day link to the first of them that has any
+ * exercises in it, and say so in the accessible name — the calendar has one
+ * cell per day and the list below is where a second session of the day is
+ * visible as its own row.
  */
 function DayCell({
   day,
