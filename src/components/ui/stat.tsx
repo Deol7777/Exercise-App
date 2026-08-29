@@ -28,10 +28,14 @@ export function Stat({
     <div className={cn("min-w-0", className)}>
       <p
         className={cn(
-          "tabular flex items-baseline gap-1 font-extrabold tracking-tight",
-          size === "lg" && "text-[2.75rem] leading-none",
-          size === "default" && "text-[2rem] leading-none",
-          size === "sm" && "text-2xl leading-none",
+          "tabular flex min-w-0 items-baseline gap-1 font-extrabold tracking-tight",
+          // The designed size is the ceiling, not a promise: the numbers scale
+          // with the row (`cqw`, hence `@container` on `StatRow`) so a wide
+          // value like "19,155 lb" beside a duration cannot push the third
+          // column past the card edge on a phone.
+          size === "lg" && "text-[clamp(1.75rem,11cqw,2.75rem)] leading-none",
+          size === "default" && "text-[clamp(1.25rem,8cqw,2rem)] leading-none",
+          size === "sm" && "text-[clamp(1.05rem,6cqw,1.5rem)] leading-none",
         )}
       >
         <span className="font-display whitespace-nowrap">{value}</span>
@@ -69,8 +73,8 @@ export function StatRow({
   return (
     <div
       className={cn(
-        "grid grid-flow-col auto-cols-max gap-4",
-        spread ? "justify-between" : "justify-start gap-10",
+        "@container grid grid-flow-col auto-cols-max gap-3 sm:gap-4",
+        spread ? "justify-between" : "justify-start gap-6 sm:gap-10",
         className,
       )}
     >
