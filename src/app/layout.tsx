@@ -30,9 +30,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * `appleWebApp` is the half of installing that the manifest does not cover:
+ * iOS reads none of it, so the launch-without-Safari-chrome flag and the name
+ * under the home-screen icon have to be stated again here as the meta tags
+ * Safari does read. `title` is short because iOS elides it under the icon.
+ *
+ * The icons themselves are files, not entries — `icon.png`, `apple-icon.png`
+ * and `favicon.ico` next to this file are picked up by the App Router, and
+ * `manifest.ts` is linked because it exists. Regenerate all of them from the
+ * drawings in assets/ with `npm run icons`.
+ */
 export const metadata: Metadata = {
   title: "Exercise App",
+  applicationName: "Exercise",
   description: "A workout logger: record a training session set by set, then read it back as progress.",
+  appleWebApp: {
+    capable: true,
+    title: "Exercise",
+    // `default` keeps the status bar legible against the light ground; the
+    // dark themes get their colour from generateViewport instead.
+    statusBarStyle: "default",
+  },
 };
 
 /**

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!--
+    The browser-tab mark, and only that. A favicon is drawn at 16px, where the
+    frog in assets/icon-frog-barbell-removebg.png is a smudge, so the tab gets
+    the barbell the frog is holding instead: three shapes, no outlines, no
+    detail below 2px at 16.
+
+    Same olive ground as the home-screen icon, so the two read as one family.
+    Nothing is inset for a safe zone, because nothing masks a favicon.
+  -->
+  <rect width="512" height="512" fill="#525A35"/>
+
+  <!-- Bar first; the plates sit over its ends. 70 tall is 2.2px at 16. -->
+  <rect x="100" y="221" width="312" height="70" rx="35" fill="#E9E4CE"/>
+
+  <!-- Plates. 104 wide and 250 tall is 3.3 x 7.8px at 16, which is the point
+       where they land as solid blocks rather than a grey wash; wider than this
+       and the bar between them stops reading as a bar. -->
+  <rect x="56" y="131" width="104" height="250" rx="34" fill="#E9E4CE"/>
+  <rect x="352" y="131" width="104" height="250" rx="34" fill="#E9E4CE"/>
+</svg>
