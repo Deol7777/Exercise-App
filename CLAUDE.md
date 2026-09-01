@@ -194,11 +194,11 @@ Docker Postgres is for the test suite only, and nothing else points at it.
 | Database | PostgreSQL + Drizzle ORM (drizzle-kit migrations) |
 | Auth | Auth.js v5, users in our own Postgres |
 | Hosting | Vercel + Neon |
-| Also | Zod (request validation, installed), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint (installed) + Prettier |
+| Also | Zod (request validation), TanStack Query (client server-state), Vitest + Playwright (tests), ESLint |
 
-Chosen but **not yet installed**: TanStack Query, Vitest, Playwright, Prettier.
-Client components use plain `fetch` and `useState` until TanStack Query lands.
-The Postgres driver is `pg` (node-postgres), not `@neondatabase/serverless`.
+TanStack Query, Vitest, and Playwright are installed and in use. Prettier is not
+installed. The Postgres driver is `pg` (node-postgres), not
+`@neondatabase/serverless`.
 
 Biome was considered and deliberately not adopted.
 

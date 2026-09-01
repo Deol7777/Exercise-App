@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Exercise
 
-## Getting Started
+Exercise is a multi-user workout logger. Sign in, record an ordered workout of
+exercises and sets, build reusable routines, and review progress over time.
 
-First, run the development server:
+It is a Next.js 16 App Router application using React 19, TypeScript, Tailwind
+CSS, Auth.js, Drizzle/Postgres (Neon in development and production), TanStack
+Query, Vitest, and Playwright.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Start here
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The project documentation is intentionally split by purpose:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Need | Read |
+| --- | --- |
+| Architecture, system boundaries, data model, and known rough edges | [docs/architecture.md](docs/architecture.md) |
+| Where new files belong and dependency rules | [FOLDER_STRUCTURE.md](FOLDER_STRUCTURE.md) |
+| Domain terms | [docs/glossary.md](docs/glossary.md) |
+| Running the app, tests, database tools, icons, and mascots | [docs/how-to-start-and-stop.md](docs/how-to-start-and-stop.md) |
+| Deployment | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Detailed implementation context and working conventions | [CLAUDE.md](CLAUDE.md) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`CLAUDE.md`, `FOLDER_STRUCTURE.md`, and `docs/architecture.md` are the key
+context files for coding changes. The latter two are the sources of truth for
+architecture and file placement.
 
-## Learn More
+## Quick start
 
-To learn more about Next.js, take a look at the following resources:
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env.local` and fill in the Neon/Auth.js values.
+3. Start the app with `npm run dev`.
+4. Open [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The development server uses the Neon database configured in `.env.local`.
+Docker Postgres is used exclusively for the automated test suite.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Common commands
 
-## Deploy on Vercel
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Run the development server |
+| `npm run lint` | Run ESLint, including architectural import-boundary checks |
+| `npx tsc --noEmit` | Type-check without building |
+| `npm test` | Start the local Docker test database and run Vitest |
+| `npm run test:e2e` | Run Playwright journeys against a real local server |
+| `npm run build` | Create a production build |
+| `npm run db:generate` | Generate a Drizzle migration after schema changes |
+| `npm run db:migrate` | Apply migrations using the direct database connection |
+| `npm run db:seed` | Seed the global exercise catalog |
+| `npm run icons` | Regenerate committed app-icon build assets |
+| `npm run mascots` | Regenerate committed mascot build assets |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+On a fresh checkout, run `npx next typegen` once before a standalone TypeScript
+check if Next's generated route types are absent.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Architectural guardrails
+
+- Keep routes thin: route handler → domain service → data access.
+- Do not use Server Actions; REST route handlers are the mutation surface.
+- Keep feature UI in `src/features/<feature>/`; shared UI belongs in
+  `src/components/` and shared code in `src/lib/`.
+- Features must not import from one another, and client components must never
+  import `src/server/**`.
+- Derive identity from the server-side Auth.js session only. All user-owned
+  data access must be scoped to that user.
+- Persist weights in kilograms; convert display units only at the UI boundary.
+
+See the linked architecture documents for the full rules and exceptions.
