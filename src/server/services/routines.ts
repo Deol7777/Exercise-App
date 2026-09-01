@@ -11,7 +11,14 @@
  * reported as `not_found` rather than `forbidden`: the caller learns nothing
  * about what exists.
  */
-import { isUniqueViolation } from "../db/pg-errors";
+import {
+  findPrebuiltRoutine,
+  prebuiltRoutineName,
+  type PrebuiltRoutine,
+} from "@/lib/prebuilt-routines";
+
+import { findGlobalExercisesByName } from "@/server/db/queries/exercises";
+import { isUniqueViolation } from "@/server/db/pg-errors";
 import {
   deleteRoutine as deleteRoutineRow,
   deleteRoutineExercise,
@@ -19,6 +26,7 @@ import {
   findRoutineDetail,
   insertRoutine,
   insertRoutineExercise,
+  insertRoutineWithExercises,
   listRoutines,
   reorderRoutineExercises as reorderRoutineExerciseRows,
   updateRoutine,
@@ -26,8 +34,8 @@ import {
   type RoutineExerciseRecord,
   type RoutineRecord,
   type RoutineSummary,
-} from "../db/queries/routines";
-import { ConflictError, InvalidError, NotFoundError } from "../errors";
+} from "@/server/db/queries/routines";
+import { ConflictError, InvalidError, NotFoundError } from "@/server/errors";
 import { getExercise } from "./exercises";
 
 export type { RoutineDetail, RoutineExerciseRecord, RoutineRecord, RoutineSummary };
@@ -59,6 +67,80 @@ export async function createRoutine(
     }
     throw error;
   }
+}
+
+/**
+ * Copies one of the shipped programmes in src/lib/prebuilt-routines.ts into
+ * this user's own routines.
+ *
+ * A *copy*, in the same sense as starting a routine: the new rows are theirs to
+ * rename, reorder and delete, and nothing points back at the prebuilt one
+ * afterwards. Changing the programme in that file cannot rewrite a routine
+ * somebody already keeps.
+ *
+ * The prebuilt routine names its movements rather than pointing at ids, so this
+ * resolves them against the *global* catalog — see `findGlobalExercisesByName`.
+ * A name that is not there means the catalog has not been seeded, which is a
+ * broken deployment rather than a bad request, so it is left as an ordinary
+ * error and reported as a 500.
+ */
+export async function copyPrebuiltRoutine(
+  userId: string,
+  prebuiltId: string,
+): Promise<RoutineRecord> {
+  const { prebuilt, exercises } = await getPrebuiltRoutineLines(prebuiltId);
+
+  try {
+    return await insertRoutineWithExercises({
+      userId,
+      name: prebuiltRoutineName(prebuilt),
+      notes: prebuilt.blurb,
+      exercises,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError(`You already have a routine called ${prebuiltRoutineName(prebuilt)}.`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * A prebuilt routine, with its movements resolved to catalog ids in the order
+ * it lists them. One query for the lot, and duplicates are kept: 5/3/1 does the
+ * same lift twice in a session, at two different prescriptions.
+ *
+ * Shared with `startWorkoutSessionFromPrebuiltRoutine` in ./training.ts, which
+ * is the other thing a prebuilt routine can become — the two must agree on
+ * exactly what "the exercises of this programme" means, so there is one
+ * resolver rather than one each.
+ */
+export async function getPrebuiltRoutineLines(
+  prebuiltId: string,
+): Promise<{ prebuilt: PrebuiltRoutine; exercises: { exerciseId: string; notes: string }[] }> {
+  const prebuilt = findPrebuiltRoutine(prebuiltId);
+  if (!prebuilt) throw new NotFoundError("That prebuilt routine does not exist.");
+
+  return { prebuilt, exercises: await resolveExercises(prebuilt) };
+}
+
+async function resolveExercises(
+  prebuilt: PrebuiltRoutine,
+): Promise<{ exerciseId: string; notes: string }[]> {
+  const names = [...new Set(prebuilt.exercises.map((line) => line.exercise))];
+  const found = await findGlobalExercisesByName(names);
+  const idByName = new Map(found.map((exercise) => [exercise.name, exercise.id]));
+
+  return prebuilt.exercises.map((line) => {
+    const exerciseId = idByName.get(line.exercise);
+    if (!exerciseId) {
+      throw new Error(
+        `Prebuilt routine "${prebuilt.slug}" names "${line.exercise}", which is not in the ` +
+          "global exercise catalog. Run `npm run db:seed`.",
+      );
+    }
+    return { exerciseId, notes: line.scheme };
+  });
 }
 
 export async function editRoutine(

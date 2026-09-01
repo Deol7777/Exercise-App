@@ -15,8 +15,9 @@ import type { MuscleGroup } from "@/lib/muscle-groups";
 import type { Granularity } from "@/lib/range";
 import { APP_TIME_ZONE } from "@/lib/time-zone";
 
-import { db } from "..";
-import { exercises, sessionExercises, sets, workoutSessions } from "../schema";
+import { db } from "@/server/db/client";
+import { exercises } from "@/server/db/schema/exercises";
+import { sessionExercises, sets, workoutSessions } from "@/server/db/schema/training";
 
 export type PersonalRecord = {
   exerciseId: string;

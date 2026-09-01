@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { zonedInstant } from "@/lib/time-zone";
-import { createUser, globalExercise } from "@/test/factories";
+import { createUser, globalExercise } from "@/testing/factories";
 
 import {
   addExerciseEntry,

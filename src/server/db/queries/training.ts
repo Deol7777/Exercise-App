@@ -16,8 +16,9 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
-import { db } from "..";
-import { exercises, sessionExercises, sets, workoutSessions } from "../schema";
+import { db } from "@/server/db/client";
+import { exercises } from "@/server/db/schema/exercises";
+import { sessionExercises, sets, workoutSessions } from "@/server/db/schema/training";
 import { nextPosition } from "./positions";
 
 export type WorkoutSessionRecord = {

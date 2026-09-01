@@ -7,8 +7,8 @@
  */
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 
-import { db } from "..";
-import { signInAttempts } from "../schema";
+import { db } from "@/server/db/client";
+import { signInAttempts } from "@/server/db/schema/security";
 
 const key = (email: string) => email.trim().toLowerCase();
 

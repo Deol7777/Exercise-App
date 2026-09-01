@@ -5,12 +5,12 @@
  * other users' private custom exercises, which is why the filter is a shared
  * helper and never written out by hand at a call site.
  */
-import { and, asc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
-import { db } from "..";
-import { exercises } from "../schema";
+import { db } from "@/server/db/client";
+import { exercises } from "@/server/db/schema/exercises";
 
 export type ExerciseRecord = {
   id: string;
@@ -59,6 +59,27 @@ export async function findVisibleExercise(
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * The global rows for a list of catalog names — deliberately *not* `visibleTo`.
+ *
+ * This backs copying a prebuilt routine (src/lib/prebuilt-routines.ts), which
+ * names the movements it wants rather than pointing at ids: ids differ per
+ * environment. A user is free to have created a custom exercise called
+ * "Deadlift" of their own — the partial unique indexes allow it — and the
+ * prebuilt routine means the seeded one, so this asks for global rows only and
+ * the answer is the same for every account.
+ */
+export async function findGlobalExercisesByName(
+  names: string[],
+): Promise<{ id: string; name: string }[]> {
+  if (names.length === 0) return [];
+
+  return db
+    .select({ id: exercises.id, name: exercises.name })
+    .from(exercises)
+    .where(and(isNull(exercises.ownerId), inArray(exercises.name, names)));
 }
 
 export async function insertCustomExercise(input: {

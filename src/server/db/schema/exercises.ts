@@ -13,7 +13,7 @@ import { sql } from "drizzle-orm";
 import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 /** Relative, not the "@/" alias: drizzle-kit and the tsx seed script load this file outside Next's resolver. */
-import { MUSCLE_GROUPS } from "../../../lib/muscle-groups";
+import { MUSCLE_GROUPS } from "@/lib/muscle-groups";
 
 import { users } from "./auth";
 

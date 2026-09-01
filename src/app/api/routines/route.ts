@@ -13,7 +13,7 @@ import { createRoutineSchema } from "@/lib/validation/routines";
 import { currentUserId } from "@/server/auth";
 import { createRoutine, listRoutinesFor } from "@/server/services/routines";
 
-import { fromError, invalidBody, unauthenticated } from "../_lib/respond";
+import { fromError, invalidBody, unauthenticated } from "@/app/api/_lib/respond";
 
 export async function GET() {
   const userId = await currentUserId();

@@ -7,8 +7,11 @@ import { eq, sql } from "drizzle-orm";
 import type { Theme } from "@/lib/theme";
 import type { WeightUnit } from "@/lib/weight";
 
-import { db } from "..";
-import { exercises, routines, users, workoutSessions } from "../schema";
+import { db } from "@/server/db/client";
+import { users } from "@/server/db/schema/auth";
+import { exercises } from "@/server/db/schema/exercises";
+import { routines } from "@/server/db/schema/routines";
+import { workoutSessions } from "@/server/db/schema/training";
 
 /** Email is stored as given but matched case-insensitively; addresses are not case-sensitive in practice. */
 const emailMatches = (email: string) => sql`lower(${users.email}) = lower(${email})`;

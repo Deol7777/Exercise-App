@@ -4,8 +4,8 @@
  */
 import { z } from "zod";
 
-import { THEMES } from "../theme";
-import { WEIGHT_UNITS } from "../weight";
+import { THEMES } from "@/lib/theme";
+import { WEIGHT_UNITS } from "@/lib/weight";
 
 /**
  * bcrypt silently truncates anything past 72 bytes, so a longer password would

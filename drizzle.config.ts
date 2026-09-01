@@ -8,7 +8,7 @@ if (!process.env.DATABASE_URL_UNPOOLED) {
 }
 
 export default defineConfig({
-  schema: "./src/server/db/schema/index.ts",
+  schema: "./src/server/db/schema",
   out: "./src/server/db/migrations",
   dialect: "postgresql",
   /** Direct connection, never the pooler: migrations need a real session. */

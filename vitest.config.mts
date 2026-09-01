@@ -23,8 +23,8 @@ export default defineConfig({
     environment: "node",
     /** `src/**` only: the Playwright specs in e2e/ are a different runner. */
     include: ["src/**/*.test.ts"],
-    globalSetup: ["src/test/global-setup.ts"],
-    setupFiles: ["src/test/setup.ts"],
+    globalSetup: ["src/testing/global-setup.ts"],
+    setupFiles: ["src/testing/setup.ts"],
     pool: "forks",
     /** Vitest 4: `fileParallelism: false` is the replacement for the old singleFork. */
     fileParallelism: false,

@@ -10,7 +10,7 @@ import { updateAccountSchema } from "@/lib/validation/auth";
 import { currentUserId } from "@/server/auth";
 import { deleteAccount, getPreferences, updatePreferences } from "@/server/services/users";
 
-import { fromError, invalidBody, unauthenticated } from "../../_lib/respond";
+import { fromError, invalidBody, unauthenticated } from "@/app/api/_lib/respond";
 
 export async function GET() {
   const userId = await currentUserId();

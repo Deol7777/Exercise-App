@@ -13,8 +13,8 @@ import Credentials from "next-auth/providers/credentials";
 
 import { signInSchema } from "@/lib/validation/auth";
 
-import { db } from "./db";
-import { accounts, sessions, users, verificationTokens } from "./db/schema";
+import { db } from "@/server/db/client";
+import { accounts, sessions, users, verificationTokens } from "@/server/db/schema/auth";
 import { verifyCredentials } from "./services/users";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({

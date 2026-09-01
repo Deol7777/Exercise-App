@@ -2,8 +2,8 @@ import { ArrowUpRight, Settings } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Greeting } from "@/components/home/greeting";
-import { StartWorkoutButton } from "@/components/home/start-workout-button";
+import { Greeting } from "@/features/home/components/greeting";
+import { StartWorkoutButton } from "@/features/training/components/start-workout-button";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
 /**
  * Home is the one tab outside the `(tabs)` group — it also renders a signed-out

@@ -4,10 +4,18 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createUser, globalExercise } from "@/test/factories";
+import { createUser, globalExercise } from "@/testing/factories";
 
-import { DomainError } from "../errors";
-import { addRoutineExercise, createRoutine, getRoutine, removeRoutineExercise } from "./routines";
+import { DomainError } from "@/server/errors";
+import { findPrebuiltRoutine } from "@/lib/prebuilt-routines";
+
+import {
+  addRoutineExercise,
+  createRoutine,
+  getRoutine,
+  listRoutinesFor,
+  removeRoutineExercise,
+} from "./routines";
 import {
   addExerciseEntry,
   editSet,
@@ -21,6 +29,7 @@ import {
   removeSet,
   removeWorkoutSession,
   startWorkoutSession,
+  startWorkoutSessionFromPrebuiltRoutine,
   startWorkoutSessionFromRoutine,
 } from "./training";
 
@@ -488,5 +497,56 @@ describe("starting a workout from a routine", () => {
     expect(
       await codeOf(() => startWorkoutSessionFromRoutine(userId, routine.id, { startedAt: tomorrow })),
     ).toBe("invalid");
+  });
+});
+
+describe("starting a workout from a prebuilt routine", () => {
+  it("copies the programme's exercises, in order, with their schemes and no sets", async () => {
+    const userId = await createUser();
+    const prebuilt = findPrebuiltRoutine("ppl-legs")!;
+
+    const session = await startWorkoutSessionFromPrebuiltRoutine(userId, prebuilt.slug);
+
+    const detail = await getWorkoutSession(userId, session.id);
+    expect(detail.exercises.map((entry) => entry.exercise.name)).toEqual(
+      prebuilt.exercises.map((line) => line.exercise),
+    );
+    expect(detail.exercises.map((entry) => entry.notes)).toEqual(
+      prebuilt.exercises.map((line) => line.scheme),
+    );
+    expect(detail.exercises.map((entry) => entry.position)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(detail.exercises.every((entry) => entry.sets.length === 0)).toBe(true);
+  });
+
+  /** Starting keeps nothing: this is the whole difference from copying it. */
+  it("writes no routine of its own", async () => {
+    const userId = await createUser();
+
+    await startWorkoutSessionFromPrebuiltRoutine(userId, "stronglifts-5x5-b");
+
+    expect(await listRoutinesFor(userId)).toEqual([]);
+  });
+
+  it("obeys the one-open-session rule, and leaves no session behind when it refuses", async () => {
+    const userId = await createUser();
+    const open = await startWorkoutSession(userId);
+
+    expect(await codeOf(() => startWorkoutSessionFromPrebuiltRoutine(userId, "ppl-push"))).toBe(
+      "conflict",
+    );
+    expect(await getActiveWorkoutSession(userId)).toMatchObject({ id: open.id });
+  });
+
+  /** The slug is resolved before the guards, so this is not_found even with one open. */
+  it("refuses an unknown slug as not_found, whether or not a session is open", async () => {
+    const userId = await createUser();
+    expect(await codeOf(() => startWorkoutSessionFromPrebuiltRoutine(userId, "nope"))).toBe(
+      "not_found",
+    );
+
+    await startWorkoutSession(userId);
+    expect(await codeOf(() => startWorkoutSessionFromPrebuiltRoutine(userId, "nope"))).toBe(
+      "not_found",
+    );
   });
 });

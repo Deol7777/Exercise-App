@@ -14,7 +14,7 @@ import {
   countRecentFailures,
   deleteFailuresBefore,
   recordFailure,
-} from "../db/queries/sign-in-attempts";
+} from "@/server/db/queries/sign-in-attempts";
 import {
   deleteAccount as deleteAccountRows,
   findPreferences,
@@ -22,9 +22,9 @@ import {
   insertUser,
   type Preferences,
   updatePreferences as updatePreferenceRows,
-} from "../db/queries/users";
-import { isUniqueViolation } from "../db/pg-errors";
-import { ConflictError, NotFoundError } from "../errors";
+} from "@/server/db/queries/users";
+import { isUniqueViolation } from "@/server/db/pg-errors";
+import { ConflictError, NotFoundError } from "@/server/errors";
 
 /**
  * 12 rounds: comfortably above the 10 that has been the default for a decade,

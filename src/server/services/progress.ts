@@ -40,7 +40,7 @@ import {
   type SessionTotals,
   type VolumePoint,
   type WeekTotals,
-} from "../db/queries/progress";
+} from "@/server/db/queries/progress";
 import { getExercise } from "./exercises";
 
 export type {

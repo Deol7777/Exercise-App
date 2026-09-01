@@ -11,8 +11,8 @@ import type { NextRequest } from "next/server";
 import { currentUserId } from "@/server/auth";
 import { getLastPerformance } from "@/server/services/progress";
 
-import { isUuid } from "../../../_lib/params";
-import { fromError, notFound, unauthenticated } from "../../../_lib/respond";
+import { isUuid } from "@/app/api/_lib/params";
+import { fromError, notFound, unauthenticated } from "@/app/api/_lib/respond";
 
 type Context = { params: Promise<{ id: string }> };
 

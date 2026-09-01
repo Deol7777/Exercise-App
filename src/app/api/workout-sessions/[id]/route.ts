@@ -18,8 +18,8 @@ import {
   removeWorkoutSession,
 } from "@/server/services/training";
 
-import { isUuid } from "../../_lib/params";
-import { fromError, invalidBody, notFound, unauthenticated } from "../../_lib/respond";
+import { isUuid } from "@/app/api/_lib/params";
+import { fromError, invalidBody, notFound, unauthenticated } from "@/app/api/_lib/respond";
 
 type Context = { params: Promise<{ id: string }> };
 

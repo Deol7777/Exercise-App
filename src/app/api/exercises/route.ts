@@ -13,7 +13,7 @@ import { createExerciseSchema } from "@/lib/validation/training";
 import { currentUserId } from "@/server/auth";
 import { createCustomExercise, listExercises } from "@/server/services/exercises";
 
-import { fromError, invalidBody, unauthenticated } from "../_lib/respond";
+import { fromError, invalidBody, unauthenticated } from "@/app/api/_lib/respond";
 
 export async function GET(request: NextRequest) {
   const userId = await currentUserId();

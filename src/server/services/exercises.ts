@@ -6,14 +6,14 @@
  */
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
-import { isUniqueViolation } from "../db/pg-errors";
+import { isUniqueViolation } from "@/server/db/pg-errors";
 import {
   findVisibleExercise,
   insertCustomExercise,
   listVisibleExercises,
   type ExerciseRecord,
-} from "../db/queries/exercises";
-import { ConflictError, NotFoundError } from "../errors";
+} from "@/server/db/queries/exercises";
+import { ConflictError, NotFoundError } from "@/server/errors";
 
 export type { ExerciseRecord };
 

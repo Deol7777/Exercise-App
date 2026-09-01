@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  */
 const TABS = [
   { href: "/", label: "Home", icon: House, exact: true },
-  { href: "/log", label: "Workout", icon: Dumbbell, exact: false },
+  { href: "/workout", label: "Workout", icon: Dumbbell, exact: false },
   { href: "/routines", label: "Routines", icon: ClipboardList, exact: false },
   { href: "/history", label: "History", icon: CalendarDays, exact: false },
   { href: "/progress", label: "Progress", icon: ChartLine, exact: false },

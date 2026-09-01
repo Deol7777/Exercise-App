@@ -225,6 +225,77 @@ one account exists.
 The year is generated, not random: the same `--seed` produces the same
 workouts, so a screenshot can be reproduced later.
 
+## Changing the app icon
+
+Two drawings in `assets/`, because a home-screen tile and a browser tab are
+looked at from very different distances:
+
+| Drawing | Feeds |
+| --- | --- |
+| `icon-frog-barbell-removebg.png` — the frog, with the page behind its rounded frame made transparent | the Apple touch icon and the manifest icons |
+| `favicon.svg` — the bare barbell, three shapes, no outlines | `favicon.ico` and `icon.png`, i.e. the browser tab |
+
+The frog is not the favicon on purpose: at 16px it is a smudge. Replace either
+drawing, then:
+
+```bash
+npm run icons
+```
+
+It writes `src/app/icon.png`, `src/app/apple-icon.png`, `src/app/favicon.ico`
+and `public/icon-192.png` / `icon-512.png`, and prints what it wrote. **Commit
+the PNGs** — nothing regenerates them at build time, so a stale file is what
+ships.
+
+`favicon.ico` gets 16, 32, 48 and 256 as four separate images inside the one
+file, each rendered at its own size. That is the whole point of the format
+here: the browser picks the entry that matches and draws it pixel for pixel
+instead of downscaling a big one into porridge.
+
+A replacement **frog** needs two things, and `scripts/icons.ts` gives it both:
+
+- **A background in every corner.** A home-screen icon is masked by the
+  platform, so a drawing with rounded corners of its own gets rounded twice and
+  the gap between the two radii renders black. The script flattens the artwork
+  onto an opaque square of `GROUND`, the drawing's own background colour —
+  change the drawing's background and change that constant with it.
+- **Room at the edges.** Android crops a maskable icon to a circle 80% of the
+  square. `FROG_SCALE` shrinks the artwork until its furthest pixel is inside
+  that circle; it is 0.92 for this drawing because the barbell is wide. A
+  drawing whose subject is more square can raise it.
+
+A replacement **mark** needs neither — nothing masks a favicon — but it does
+need to survive 16px: no outlines, no shape thinner than about 2px once
+scaled, and no more than three or four of them.
+
+A phone that already has the app installed keeps the old icon: the manifest is
+read once, at install time. Delete the shortcut and add it again to see a
+change.
+
+## Changing the mascots
+
+The animals are drawings in `assets/<name>.png`, one file per animal, 1024px
+square with a transparent background — a mascot sits on a themed surface, so a
+white square behind it is wrong in every theme. `src/lib/mascots.ts` lists which
+names exist.
+
+Add or redraw one, add its name to that list, then:
+
+```bash
+npm run mascots
+```
+
+It resizes every drawing into `public/mascots/` at 320px and prints what it
+wrote. **Commit the PNGs** — nothing regenerates them at build time, so a
+missing file is a broken image in production. A name in the list with no
+drawing in `assets/` fails the script rather than the browser.
+
+The animals are decoration only, never information. `mascotFor(seed)` hashes a
+stable string — an exercise id, a routine id — so the same thing keeps the same
+animal on every screen and every visit. The pool's length is the modulus, so
+adding an animal reshuffles which one a given exercise gets; that is cosmetic,
+and nothing writes the pairing down.
+
 ## When something will not start
 
 | Symptom | What is wrong |

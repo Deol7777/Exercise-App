@@ -1,8 +1,8 @@
 import { requireAccount } from "@/app/_lib/require-account";
-import { DeleteAccountDialog } from "@/components/account/delete-account-dialog";
-import { ThemeSelect } from "@/components/account/theme-select";
-import { WeightUnitSelect } from "@/components/account/weight-unit-select";
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { DeleteAccountDialog } from "@/features/account/components/delete-account-dialog";
+import { ThemeSelect } from "@/features/account/components/theme-select";
+import { WeightUnitSelect } from "@/features/account/components/weight-unit-select";
+import { SignOutButton } from "@/features/auth/components/sign-out-button";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
 import { Surface } from "@/components/ui/surface";
 

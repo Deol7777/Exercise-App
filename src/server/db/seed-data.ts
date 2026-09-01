@@ -7,7 +7,7 @@
  */
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
-import { exercises } from "./schema";
+import { exercises } from "@/server/db/schema/exercises";
 
 export type SeedExercise = (typeof GLOBAL_EXERCISES)[number];
 

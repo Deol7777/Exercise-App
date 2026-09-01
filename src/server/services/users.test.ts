@@ -6,9 +6,12 @@
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { db } from "../db";
-import { exercises, routines, sets, signInAttempts, workoutSessions } from "../db/schema";
-import { GLOBAL_EXERCISES } from "../db/seed-data";
+import { db } from "@/server/db/client";
+import { exercises } from "@/server/db/schema/exercises";
+import { routines } from "@/server/db/schema/routines";
+import { signInAttempts } from "@/server/db/schema/security";
+import { sets, workoutSessions } from "@/server/db/schema/training";
+import { GLOBAL_EXERCISES } from "@/server/db/seed-data";
 import { createCustomExercise } from "./exercises";
 import { addRoutineExercise, createRoutine } from "./routines";
 import { addExerciseEntry, logSet, startWorkoutSession } from "./training";

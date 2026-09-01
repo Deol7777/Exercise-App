@@ -9,7 +9,7 @@ import { isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { exercises } from "./schema";
+import { exercises } from "@/server/db/schema/exercises";
 import { GLOBAL_EXERCISES, seedGlobalExercises } from "./seed-data";
 
 process.loadEnvFile(".env.local");

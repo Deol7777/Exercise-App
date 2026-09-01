@@ -10,8 +10,8 @@
  */
 import { integer, pgEnum, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
-import { THEMES } from "../../../lib/theme";
-import { WEIGHT_UNITS } from "../../../lib/weight";
+import { THEMES } from "@/lib/theme";
+import { WEIGHT_UNITS } from "@/lib/weight";
 
 /**
  * A *display* preference and nothing more. Every weight in this database is

@@ -4,7 +4,8 @@
  * GET  lists this user's sessions, newest first, with entry and set counts.
  *      `?active=true` returns the one still in progress with its exercise
  *      entries and sets, or null — the logging screen's whole payload.
- * POST starts a session, empty or pre-filled from a routine (`routineId`).
+ * POST starts a session: empty, pre-filled from one of this user's routines
+ *      (`routineId`), or pre-filled from a shipped programme (`prebuiltId`).
  *      Only one may be in progress at a time; a second attempt is a 409.
  *
  * The owning user is the session user, never anything in the request.
@@ -18,10 +19,11 @@ import {
   getActiveWorkoutSessionDetail,
   listWorkoutSessionsFor,
   startWorkoutSession,
+  startWorkoutSessionFromPrebuiltRoutine,
   startWorkoutSessionFromRoutine,
 } from "@/server/services/training";
 
-import { fromError, invalidBody, unauthenticated } from "../_lib/respond";
+import { fromError, invalidBody, unauthenticated } from "@/app/api/_lib/respond";
 
 const MAX_LIMIT = 100;
 
@@ -53,12 +55,19 @@ export async function POST(request: Request) {
   const parsed = createWorkoutSessionSchema.safeParse(body ?? {});
   if (!parsed.success) return invalidBody(parsed.error);
 
-  const { routineId, ...input } = parsed.data;
+  const { routineId, prebuiltId, ...input } = parsed.data;
 
   try {
+    /**
+     * Three ways in, one endpoint, so all three pass the identical
+     * one-open-session and no-future-start guards. `routineId` wins if a caller
+     * sends both; the UI never does.
+     */
     const session = routineId
       ? await startWorkoutSessionFromRoutine(userId, routineId, input)
-      : await startWorkoutSession(userId, input);
+      : prebuiltId
+        ? await startWorkoutSessionFromPrebuiltRoutine(userId, prebuiltId, input)
+        : await startWorkoutSession(userId, input);
 
     return NextResponse.json(session, { status: 201 });
   } catch (error) {

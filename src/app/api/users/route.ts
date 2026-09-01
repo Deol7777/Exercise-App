@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { registerSchema } from "@/lib/validation/auth";
 import { registerUser } from "@/server/services/users";
 
-import { fromError, invalidBody } from "../_lib/respond";
+import { fromError, invalidBody } from "@/app/api/_lib/respond";
 
 export async function POST(request: Request) {
   const parsed = registerSchema.safeParse(await request.json().catch(() => null));

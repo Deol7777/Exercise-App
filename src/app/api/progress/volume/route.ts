@@ -10,7 +10,7 @@ import type { NextRequest } from "next/server";
 import { currentUserId } from "@/server/auth";
 import { DEFAULT_WEEKS, getWeeklyVolume } from "@/server/services/progress";
 
-import { fromError, unauthenticated } from "../../_lib/respond";
+import { fromError, unauthenticated } from "@/app/api/_lib/respond";
 
 export async function GET(request: NextRequest) {
   const userId = await currentUserId();

@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 
-import { MUSCLE_GROUPS } from "../muscle-groups";
+import { MUSCLE_GROUPS } from "@/lib/muscle-groups";
 
 /** Shared with the routine schemas next door. */
 export const notes = z.string().trim().max(2_000, "Keep notes under 2000 characters.");
@@ -27,6 +27,13 @@ export const createWorkoutSessionSchema = z.object({
    * one-open-session and no-future-start guards.
    */
   routineId: z.uuid("Pick a routine.").optional(),
+  /**
+   * Start from a shipped programme instead, without keeping a routine for it.
+   * A slug from src/lib/prebuilt-routines.ts, not a uuid — a prebuilt routine
+   * is content in the codebase, not a row. Whether it names a real one is the
+   * service's question.
+   */
+  prebuiltId: z.string().trim().min(1, "Pick a routine.").max(120).optional(),
 });
 
 /**

@@ -1,15 +1,15 @@
 import Link from "next/link";
 
-import { ExerciseSelect } from "@/components/progress/exercise-select";
-import { MuscleRadar } from "@/components/progress/muscle-radar";
-import { RecordsList } from "@/components/progress/records-list";
-import { SegmentedLinks } from "@/components/progress/segmented-links";
-import { StrengthChart } from "@/components/progress/strength-chart";
-import { VolumeChart } from "@/components/progress/volume-chart";
+import { ExerciseSelect } from "@/features/progress/components/exercise-select";
+import { MuscleRadar } from "@/features/progress/components/muscle-radar";
+import { RecordsList } from "@/features/progress/components/records-list";
+import { StrengthChart } from "@/features/progress/components/strength-chart";
+import { VolumeChart } from "@/features/progress/components/volume-chart";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
+import { SegmentedLinks } from "@/components/ui/segmented-links";
 import { Delta, Stat, StatRow } from "@/components/ui/stat";
 import { Surface, SurfaceRule } from "@/components/ui/surface";
-import { CHART_TYPES, CHART_TYPE_LABELS, parseChartType } from "@/lib/chart";
+import { CHART_TYPES, CHART_TYPE_LABELS, parseChartType } from "@/features/progress/utils/chart";
 import { dayLabel, plural } from "@/lib/format";
 import { parseRange, RANGE_PHRASES, RANGE_SHAPE, RANGES, RANGE_LABELS } from "@/lib/range";
 import { fromKilograms, type WeightUnit } from "@/lib/weight";
@@ -124,6 +124,7 @@ export default async function ProgressPage({
           />
         ) : null}
         <SegmentedLinks
+          basePath="/progress"
           options={RANGE_OPTIONS}
           value={range}
           param="range"
@@ -154,6 +155,7 @@ export default async function ProgressPage({
                   {RANGE_PHRASES[range]}
                 </p>
                 <SegmentedLinks
+                  basePath="/progress"
                   options={CHART_OPTIONS}
                   value={strengthType}
                   param="strengthChart"
@@ -256,6 +258,7 @@ export default async function ProgressPage({
                   weight, {RANGE_PHRASES[range]}
                 </p>
                 <SegmentedLinks
+                  basePath="/progress"
                   options={CHART_OPTIONS}
                   value={volumeType}
                   param="volumeChart"

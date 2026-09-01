@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { requireAccount } from "@/app/_lib/require-account";
-import { MonthCalendar } from "@/components/history/month-calendar";
+import { MonthCalendar } from "@/features/history/components/month-calendar";
 import { Screen, ScreenHeader, SectionHeader } from "@/components/layout/screen";
 import { Mascot } from "@/components/ui/mascot";
 import { Stat, StatRow } from "@/components/ui/stat";
@@ -63,7 +63,7 @@ export default async function HistoryPage({
         {sessions.length === 0 ? (
           <Surface className="text-sm text-muted-foreground">
             Nothing logged yet.{" "}
-            <Link href="/log" className="text-foreground underline underline-offset-4">
+            <Link href="/workout" className="text-foreground underline underline-offset-4">
               Start a workout
             </Link>{" "}
             and it will show up here.

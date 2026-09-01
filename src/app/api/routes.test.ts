@@ -11,7 +11,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createUser, globalExercise } from "@/test/factories";
+import { createUser, globalExercise } from "@/testing/factories";
 
 vi.mock("@/server/auth", () => ({ currentUserId: vi.fn() }));
 
@@ -32,6 +32,7 @@ import {
 import { POST as postSet } from "./exercise-entries/[id]/sets/route";
 import { DELETE as deleteSet, PATCH as patchSet } from "./sets/[id]/route";
 import { GET as getRoutines, POST as postRoutine } from "./routines/route";
+import { POST as postPrebuiltRoutine } from "./routines/prebuilt/route";
 import {
   DELETE as deleteRoutine,
   GET as getRoutine,
@@ -428,6 +429,62 @@ describe("the catalog over HTTP", () => {
   });
 });
 
+describe("starting a workout from a prebuilt routine over HTTP", () => {
+  it("starts one from a slug, and keeps no routine for it", async () => {
+    signedInAs(await createUser());
+
+    const started = await postSession(
+      json("/api/workout-sessions", "POST", { prebuiltId: "ppl-push" }),
+    );
+    expect(started.status).toBe(201);
+
+    /** The same 409 a plain second start gets: one endpoint, one guard. */
+    const again = await postSession(
+      json("/api/workout-sessions", "POST", { prebuiltId: "ppl-pull" }),
+    );
+    expect(again.status).toBe(409);
+
+    expect(await (await getRoutines()).json()).toEqual([]);
+  });
+
+  it("answers 404 for an unknown slug and 422 for an empty one", async () => {
+    signedInAs(await createUser());
+
+    const responses = await Promise.all([
+      postSession(json("/api/workout-sessions", "POST", { prebuiltId: "nope" })),
+      postSession(json("/api/workout-sessions", "POST", { prebuiltId: "  " })),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 422]);
+  });
+});
+
+describe("copying a prebuilt routine over HTTP", () => {
+  it("creates a real routine of this user's, and answers 409 on a second copy", async () => {
+    signedInAs(await createUser());
+    const body = { prebuiltId: "stronglifts-5x5-a" };
+
+    const created = await postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", body));
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ name: "StrongLifts 5×5 · Workout A" });
+
+    const again = await postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", body));
+    expect(again.status).toBe(409);
+  });
+
+  it("answers 404 for a slug no prebuilt routine has, and 422 for a body without one", async () => {
+    signedInAs(await createUser());
+
+    const responses = await Promise.all([
+      postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", { prebuiltId: "nope" })),
+      postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", {})),
+      postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", { prebuiltId: "  " })),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 422, 422]);
+  });
+});
+
 describe("routines over HTTP", () => {
   /** A routine holding `names`, and the parsed body of its detail read. */
   async function routineOf(userId: string, name: string, names: string[]) {
@@ -467,10 +524,11 @@ describe("routines over HTTP", () => {
         json(`/api/routine-exercises/${UNUSED_UUID}`, "DELETE"),
         context(UNUSED_UUID),
       ),
+      postPrebuiltRoutine(json("/api/routines/prebuilt", "POST", { prebuiltId: "ppl-push" })),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([
-      401, 401, 401, 401, 401, 401, 401, 401,
+      401, 401, 401, 401, 401, 401, 401, 401, 401,
     ]);
   });
 

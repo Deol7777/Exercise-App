@@ -15,8 +15,8 @@ import { updateRoutineSchema } from "@/lib/validation/routines";
 import { currentUserId } from "@/server/auth";
 import { editRoutine, getRoutine, removeRoutine } from "@/server/services/routines";
 
-import { isUuid } from "../../_lib/params";
-import { fromError, invalidBody, notFound, unauthenticated } from "../../_lib/respond";
+import { isUuid } from "@/app/api/_lib/params";
+import { fromError, invalidBody, notFound, unauthenticated } from "@/app/api/_lib/respond";
 
 type Context = { params: Promise<{ id: string }> };
 

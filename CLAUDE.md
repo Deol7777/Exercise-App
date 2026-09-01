@@ -14,6 +14,16 @@ Next.js 16 (App Router, React 19, Tailwind 4) with shadcn/ui components in
 `src/components/ui/`. Note `--src-dir`: the App Router lives at `src/app/**`,
 not `app/**`.
 
+**The client code is grouped by feature, not by file type**: each screen's
+components live in `src/features/<feature>/` — `training`, `routines`,
+`progress`, `history`, `account`, `auth`, `home` — and `src/components/` holds
+only what two or more of them share (the shadcn kit in `ui/`, `layout/screen.tsx`,
+`nav/`). `src/server/**` is the orthogonal server layer and stays as it was.
+[FOLDER_STRUCTURE.md](FOLDER_STRUCTURE.md) is the source of truth for where a
+new file goes; the boundaries are enforced by `import/no-restricted-paths` in
+`eslint.config.mjs`, so a cross-feature import fails `npm run lint` rather than
+being caught in review.
+
 The full schema — Auth.js tables plus `exercises`, `workout_sessions`,
 `session_exercises`, `sets` — is migrated onto a Neon project (`exercise-app`,
 aws-us-west-2), and the global exercise catalog is seeded (71 rows).
@@ -27,7 +37,7 @@ error-to-status mapping in `src/app/api/_lib/respond.ts`. `currentUserId()` in
 **The training write path is built**: `src/server/services/training.ts` and
 `services/exercises.ts` over `db/queries/training.ts` and `queries/exercises.ts`,
 the REST surface under `/api/workout-sessions`, `/api/exercise-entries`,
-`/api/sets` and `/api/exercises`, and the `/log` screen that drives them. Two
+`/api/sets` and `/api/exercises`, and the `/workout` screen that drives them. Two
 domain rules live in the service layer, not the schema: only one workout session
 may be in progress at a time, and `position` is assigned by the database as
 `max(position) + 1` — never sent by the client.
@@ -47,17 +57,35 @@ drive them. A *routine* is a reusable named list of exercises — a plan, not a
 record; check `docs/glossary.md` before reaching for the word "session" for one.
 Starting one **copies** its exercises into a new workout session and nothing
 links them afterwards, so editing a routine cannot rewrite history. A **Start
-routine** link on the home screen and `/log` opens `/routines/start`, one card
+routine** link on the home screen and `/workout` opens `/routines/start`, one card
 per routine, and tapping a card is what starts it — there is no start control on
 `/routines` itself. Starting goes through the same `POST /api/workout-sessions`
 as a plain start (with a `routineId`), so both share the one-open-session
 guard. `/browse` was a
 placeholder and is gone; the tab is now Routines.
 
+**Prebuilt routines ship with the app**: established programmes — StrongLifts
+5×5, Starting Strength, Push Pull Legs, Upper/Lower, the Arnold split, 5/3/1
+Boring But Big, a beginner full body — as **static data** in
+`src/lib/prebuilt-routines.ts`, not rows. They are the same for every account
+and change when that file changes, which is why they are content rather than a
+migration and a seed. `/routines` carries a segmented switch
+(`components/ui/segmented-links.tsx`, shared with `/progress`) between
+`?tab=mine` and `?tab=prebuilt`; a day opens at `/routines/prebuilt/[slug]`,
+which offers two things. **Start routine** is the primary action: `POST
+/api/workout-sessions` with a `prebuiltId` copies the exercises straight into a
+new workout session and keeps nothing — same endpoint, same one-open-session
+guard as the other two ways to start. **Copy to my routines** is the second
+choice: `POST /api/routines/prebuilt` writes real user-owned rows in one
+transaction. Either way the sets-and-reps prescription rides along as a note. A prebuilt routine names its movements as *strings*
+matched against the global catalog — ids differ per environment — so a typo is
+a routine that copies without a lift, and a test in
+`services/routines.test.ts` checks every name against `GLOBAL_EXERCISES`.
+
 **Tests exist for the service layer**: Vitest against a local `postgres:17`
 from `docker-compose.yml` on port **5433** — never Neon, and the suite refuses
-to start against a non-localhost `DATABASE_URL`. `src/test/global-setup.ts`
-migrates and seeds it; `src/test/setup.ts` empties the log before each test.
+to start against a non-localhost `DATABASE_URL`. `src/testing/global-setup.ts`
+migrates and seeds it; `src/testing/setup.ts` empties the log before each test.
 Tests live next to what they test: `src/server/services/*.test.ts` for the
 domain rules, `src/app/api/routes.test.ts` for the HTTP contract (401/404/422,
 status mapping, cross-user isolation) with `currentUserId` mocked.
@@ -78,8 +106,8 @@ makes every route request-rendered.
 
 **End-to-end tests exist**: Playwright journeys in `e2e/` — signing up and
 logging a workout, correcting a set and switching to pounds, one user's log
-staying away from another, account deletion, and building a routine and starting
-it (`e2e/routines.spec.ts`). They run a real server on port 3100 pointed at the Docker
+staying away from another, account deletion, and building a routine, copying a
+prebuilt programme, and starting one either way (`e2e/routines.spec.ts`). They run a real server on port 3100 pointed at the Docker
 database, and are the only place Auth.js itself is exercised.
 
 **Accounts can be deleted**: `DELETE /api/users/me`, a hard delete in one
@@ -104,6 +132,8 @@ and unknown address are deliberately indistinguishable. `BCRYPT_COST` is 4 under
 is the half iOS reads. Every icon is generated by `npm run icons`, and the PNGs
 and the `.ico` are committed build products, not sources.
 
+**The mascots are drawings too**: fifteen animals in `assets/<name>.png`, rendered to `public/mascots/` by `npm run mascots` and named in `src/lib/mascots.ts`, which `src/components/ui/mascot.tsx` renders from. They are decoration and nothing else — every one is `aria-hidden` — and `mascotFor(seed)` hashes a stable string so an exercise keeps its animal across screens and visits. Adding one is three things: the drawing, the name in the list, and a re-run of the script; a name with no drawing is a broken image, and the pool's length is the hash's modulus, so adding one reshuffles who gets what.
+
 There are **two** drawings, because the icons are looked at from two distances:
 `assets/icon-frog-barbell-removebg.png` (the frog) for the home-screen tile,
 and `assets/favicon.svg` (the bare barbell, no outlines) for the browser tab,
@@ -120,7 +150,10 @@ Still missing: **no component-level test runner** (no jsdom, no Testing
 Library), so components off the end-to-end paths are verified by hand. Sets
 cannot be reordered (exercise entries and routine exercises can). The exercise
 catalog has no screen of its own — it is reachable only through the two pickers
-that add an exercise to something.
+that add an exercise to something. A prebuilt routine's per-exercise
+prescription shows in the routine editor but cannot be edited or cleared there,
+and on `session_exercises.notes` — where starting one puts it — no screen shows
+it at all.
 
 ## Commands
 
@@ -130,6 +163,7 @@ that add an exercise to something.
 | `npm run build` | Production build, including a TypeScript pass. |
 | `npm run lint` | ESLint. |
 | `npm run icons` | Render the two icon drawings in `assets/` into the favicon, the Apple touch icon and the manifest PNGs. Nothing regenerates them at build time — commit what it writes. |
+| `npm run mascots` | Render the fifteen mascot drawings in `assets/` into `public/mascots/`. Same rule — nothing regenerates them at build time, so commit what it writes. |
 | `npm test` | Vitest, once. Starts the Docker test database first via `pretest`. |
 | `npm run test:watch` | Vitest in watch mode. Expects the container to be up already. |
 | `npm run test:e2e` | Playwright. Starts its own `next dev` on port 3100 against the test database. Needs `npx playwright install chromium` once. |

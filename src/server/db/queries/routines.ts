@@ -14,8 +14,9 @@ import { and, asc, eq, sql } from "drizzle-orm";
 
 import type { MuscleGroup } from "@/lib/muscle-groups";
 
-import { db } from "..";
-import { exercises, routineExercises, routines } from "../schema";
+import { db } from "@/server/db/client";
+import { exercises } from "@/server/db/schema/exercises";
+import { routineExercises, routines } from "@/server/db/schema/routines";
 import { nextPosition } from "./positions";
 
 export type RoutineRecord = {
@@ -62,6 +63,44 @@ export async function insertRoutine(input: {
     .returning(routineColumns);
 
   return row;
+}
+
+/**
+ * A whole routine and its exercises in one transaction, positions 1..n in the
+ * order given.
+ *
+ * Copying a prebuilt routine is the one write that knows every line up front,
+ * so it does not go through `nextPosition`: the routine is brand new, nothing
+ * else can be inserting into it, and a half-copied routine is not a thing worth
+ * being able to produce. A duplicate name raises the same
+ * `routines_user_name_unique` violation `insertRoutine` does, and rolls the
+ * exercises back with it.
+ */
+export async function insertRoutineWithExercises(input: {
+  userId: string;
+  name: string;
+  notes?: string | null;
+  exercises: { exerciseId: string; notes?: string | null }[];
+}): Promise<RoutineRecord> {
+  return db.transaction(async (tx) => {
+    const [routine] = await tx
+      .insert(routines)
+      .values({ userId: input.userId, name: input.name, notes: input.notes ?? null })
+      .returning(routineColumns);
+
+    if (input.exercises.length > 0) {
+      await tx.insert(routineExercises).values(
+        input.exercises.map((exercise, index) => ({
+          routineId: routine.id,
+          exerciseId: exercise.exerciseId,
+          notes: exercise.notes ?? null,
+          position: index + 1,
+        })),
+      );
+    }
+
+    return routine;
+  });
 }
 
 export async function findRoutine(userId: string, routineId: string): Promise<RoutineRecord | null> {

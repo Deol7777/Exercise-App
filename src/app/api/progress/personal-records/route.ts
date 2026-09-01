@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { currentUserId } from "@/server/auth";
 import { getPersonalRecords } from "@/server/services/progress";
 
-import { fromError, unauthenticated } from "../../_lib/respond";
+import { fromError, unauthenticated } from "@/app/api/_lib/respond";
 
 export async function GET() {
   const userId = await currentUserId();

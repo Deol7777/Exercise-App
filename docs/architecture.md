@@ -33,13 +33,15 @@ built and running against the live database.
 | Exercise catalog | Seeded, 71 global rows (`owner_id IS NULL`). `npm run db:seed` is idempotent. Custom exercises can be created. |
 | Auth | Email/password sign-in, registration, sign-out, account deletion. Auth.js v5, `jwt` session strategy. Sign-in is throttled to ten failures per email per fifteen minutes (ADR 0015). `currentUserId()` in `src/server/auth.ts` is how server code asks who is acting. |
 | Route handlers | Registration, the Auth.js catch-all, the exercise catalog, the workout-session → exercise-entry → set write path, and the progress reads. See the table below. |
-| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/log`, `/log/[entryId]`, `/routines`, `/routines/start`, `/routines/[id]`, `/history`, `/history/[id]`, `/progress`, `/settings`. |
+| Pages | `/` (session-aware landing), `/sign-in`, `/sign-up`, `/workout`, `/workout/[entryId]`, `/routines`, `/routines/start`, `/routines/prebuilt/[slug]`, `/routines/[id]`, `/history`, `/history/[id]`, `/progress`, `/settings`. |
 | Exercise marks | `src/components/ui/exercise-icon.tsx` draws a line mark per movement, matched on the catalog name; all 71 global exercises have one, and anything unmatched (a custom exercise) falls back to the mascot. Used by the logging card and the stepper screen. |
+| Mascots | Fifteen animal drawings in `assets/`, rendered to `public/mascots/*.png` by `npm run mascots` and listed in `src/lib/mascots.ts`. Decoration only, always `aria-hidden`; `mascotFor(seed)` hashes a stable string so the same exercise keeps the same animal. Adding one means a drawing, a name in the list, and a re-run of the script. |
 | Domain services | `users`, `exercises`, `training`, `routines`, `progress` in `src/server/services/`. |
 | Theming | Six colour themes (ADR 0017), stored on `users.theme` and applied by the root layout as `data-theme` on `<html>`. Every screen already reads role tokens, so a theme is a block of token values in `globals.css` and nothing else. Two are dark. |
 | Data access | `queries/users.ts`, `queries/exercises.ts`, `queries/training.ts`, `queries/routines.ts`, `queries/progress.ts`, and `queries/positions.ts` for the one shared `max(position) + 1` expression. |
 | Error contract | `src/app/api/_lib/respond.ts` maps every `DomainErrorCode` to a status. |
-| Routines | Reusable, named lists of exercises (`routines`, `routine_exercises`). Created, edited, reordered and deleted on `/routines`. A **Start routine** link on the home screen and `/log` opens `/routines/start`, a screen of one card per routine; tapping one **copies** its exercises into a new workout session, and nothing links them afterwards. |
+| Routines | Reusable, named lists of exercises (`routines`, `routine_exercises`). Created, edited, reordered and deleted on `/routines`. A **Start routine** link on the home screen and `/workout` opens `/routines/start`, a screen of one card per routine; tapping one **copies** its exercises into a new workout session, and nothing links them afterwards. |
+| Prebuilt routines | Established programmes shipped with the app — StrongLifts 5×5, Starting Strength, Push Pull Legs, Upper/Lower, the Arnold split, 5/3/1 Boring But Big, a beginner full body — as **static data** in `src/lib/prebuilt-routines.ts`, not rows. `/routines` switches between `?tab=mine` and `?tab=prebuilt`; a prebuilt day opens at `/routines/prebuilt/[slug]`, which offers two things: **Start routine**, which copies the exercises straight into a new workout session and keeps nothing, and **Copy to my routines**, which writes real user-owned routine rows. Either way the sets-and-reps prescription rides along as a note. |
 | Tests | Vitest against a local Postgres in Docker: 196 tests, plus 8 Playwright journeys in `e2e/` against a real server on the same database. Domain services in `src/server/services/*.test.ts`, the HTTP contract in `src/app/api/routes.test.ts` with `currentUserId` mocked. Components are not covered. |
 
 ### The API surface
@@ -53,7 +55,7 @@ built and running against the live database.
 | `GET /api/exercises` | The catalog this user may see: global plus their own. `?search=` filters by name. |
 | `POST /api/exercises` | Create a custom exercise, private to the caller. |
 | `GET /api/workout-sessions` | This user's sessions, newest first, with entry and set counts. `?active=true` returns the one in progress **with its exercise entries and sets**, or `null` — the logging screen's whole payload. |
-| `POST /api/workout-sessions` | Start a session, empty or pre-filled from a routine via `routineId`. 409 if one is already in progress. |
+| `POST /api/workout-sessions` | Start a session: empty, pre-filled from a routine via `routineId`, or pre-filled from a shipped programme via `prebuiltId`. 409 if one is already in progress. |
 | `GET /api/workout-sessions/[id]` | One session with its exercise entries and their sets. |
 | `PATCH /api/workout-sessions/[id]` | Edit notes and/or `endedAt`. `endedAt: null` reopens it. |
 | `DELETE /api/workout-sessions/[id]` | Delete it, cascading to entries and sets. |
@@ -62,6 +64,7 @@ built and running against the live database.
 | `DELETE /api/exercise-entries/[id]` | Remove an entry and its sets. |
 | `GET /api/routines` | This user's routines, alphabetically, with a count of what is in each. |
 | `POST /api/routines` | Create a routine. Names are unique per user; a repeat is a 409. |
+| `POST /api/routines/prebuilt` | Copy a shipped programme (`prebuiltId`, a slug) into this user's routines. Unknown slug 404; a name already taken 409. |
 | `GET /api/routines/[id]` | One routine with its exercises, in order. |
 | `PATCH /api/routines/[id]` | Rename it and/or edit its notes. |
 | `DELETE /api/routines/[id]` | Delete it and its exercises. Workout sessions started from it are untouched. |
@@ -95,23 +98,30 @@ pickers that add an exercise to something.
 
 | Component | Lives in | Responsibility | Talks to |
 | --- | --- | --- | --- |
-| Web UI | `src/app/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts` and TanStack Query, domain services (server components only) |
+| Web UI | `src/app/**`, `src/features/**`, `src/components/**` | Render pages; resolve the acting account through `src/app/_lib/require-account.ts`; capture set-by-set input fast enough to use between sets | REST API through `src/lib/api.ts` and TanStack Query, domain services (server components only) |
 | API client | `src/lib/api.ts`, `src/lib/queries.ts`, `src/app/providers.tsx` | The browser's side of the REST contract: one `apiFetch` throwing `ApiError`, and the TanStack Query cache the logging screen runs on (ADR 0014) | REST API |
 | REST API | `src/app/api/**` | HTTP boundary: authenticate, validate with Zod, map results to status codes | Domain services |
 | Domain services | `src/server/services/**` | Business rules: session lifecycle, ownership checks, personal records, top set per day, volume aggregation | Data access |
 | Progress reads | `src/server/db/queries/progress.ts`, `services/progress.ts` | Aggregates over logged training: records, last performance, volume by bucket, one lift's top set over time, and the top set of its last workout | PostgreSQL |
 | Data access | `src/server/db/**` | Drizzle schema, typed queries, migrations, unit conversion at the boundary | PostgreSQL |
 | Auth | `src/server/auth.ts`, `src/app/api/auth/**` | Sign-in, auth sessions, the `users` table | PostgreSQL |
-| Tests | `src/**/*.test.ts`, `src/test/**` | Service and handler suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
+| Tests | `src/**/*.test.ts`, `src/testing/**` | Service and handler suite: migrates and seeds a disposable local database, empties the log between cases | Local PostgreSQL in Docker |
 | End-to-end | `e2e/**`, `playwright.config.ts` | A real browser against `next dev` on port 3100: sign-up, logging, unit switching, cross-user isolation. The only suite that runs Auth.js for real | Next server → local PostgreSQL |
 
 The App Router lives under `src/app/**`, not `app/**` — the app was scaffolded
 with `--src-dir`.
 
+Client code is grouped by feature: `src/features/<feature>/components/**` holds
+the UI for one screen's domain, `src/components/**` holds only what two or more
+features share, and `src/app/**` composes them. Features may not import each
+other, and nothing shared may import a feature — both enforced by
+`import/no-restricted-paths` in `eslint.config.mjs`. The rules and the current
+feature list are in [FOLDER_STRUCTURE.md](../FOLDER_STRUCTURE.md).
+
 ### Navigation
 
 The five signed-in destinations sit in a `(tabs)` route group. The group is a
-route group, so it changes no URL — `/log` is still `/log` — and it exists for
+route group, so it changes no URL — `/workout` is still `/workout` — and it exists for
 one reason: `src/app/(tabs)/layout.tsx` renders the tab bar as a *layout*, which
 means React keeps it mounted across a navigation between tabs and re-renders
 only the page below it. The bar used to be rendered by `Screen`, so it was part
@@ -165,7 +175,7 @@ graph TD
 
 ### Database access
 
-`src/server/db/index.ts` is the only place a connection is opened. It uses
+`src/server/db/client.ts` is the only place a connection is opened. It uses
 `pg` (node-postgres) through `drizzle-orm/node-postgres` against the **pooled**
 Neon string — not `@neondatabase/serverless`, because the same handle has to
 serve server components, route handlers and the drizzle-kit seed script. The
@@ -276,11 +286,13 @@ this one alone is a slow app with nothing obviously wrong with it.
   lets the client router reuse a tab you were just on without a server round
   trip. Training mutations go through TanStack Query, which invalidates *its*
   cache and knows nothing about the router's — so anything whose effect shows on
-  another tab has to call `router.refresh()` by hand. Four do: the two start
+  another tab has to call `router.refresh()` by hand. Five do: the two start
   buttons (`start-workout-button.tsx`, `routine-start-list.tsx`),
   `crossTabMutation` in `workout-logger.tsx`, which covers start and finish, and
-  both mutations in `routine-list.tsx` — whether any routine exists is what
-  decides if Home and `/log` offer a way to start one. A new mutation that
+  both mutations in `routine-list.tsx`, and both in
+  `prebuilt-routine-actions.tsx` — whether any routine exists is what decides if
+  Home and `/workout` offer a way to start one, and starting from a programme is a
+  new open session `/workout` has to see. A new mutation that
   changes what another tab shows and forgets the refresh fails silently, and
   only for half a minute, which is the worst way to fail. `e2e/routines.spec.ts`
   caught exactly that and is the guard against it.
@@ -360,7 +372,7 @@ this one alone is a slow app with nothing obviously wrong with it.
   the whole picture lives now. The last-session card is the deliberate exception
   to the range, and is unbounded by it: "last time" is whenever it was.
 - **Chart geometry is hand-written and only half tested.** The scales, ticks
-  and bucket arithmetic are pure functions with tests (`src/lib/chart.test.ts`,
+  and bucket arithmetic are pure functions with tests (`src/features/progress/utils/chart.test.ts`,
   `src/lib/range.test.ts`), but the drawing itself is inline SVG (ADR 0016) and
   has none. The failure mode is visual — a label past the `viewBox` edge, a
   polygon vertex on the centre — and with no component test runner the only
@@ -376,11 +388,25 @@ this one alone is a slow app with nothing obviously wrong with it.
   holding it, and there is no warning first — a plan losing a line is
   recoverable, a logged performance is not. The two are meant to differ; a
   change that "fixes the inconsistency" in either direction breaks one of them.
-- **Nothing in the UI reaches routine or exercise-entry notes.** Both columns
-  exist and both are accepted by their schemas, and no screen writes either.
+- **Nothing in the UI *writes* routine or exercise-entry notes.** Both columns
+  exist and both are accepted by their schemas, and no screen sends either. The
+  one thing that fills `routine_exercises.notes` is copying a prebuilt routine,
+  which writes the prescription ("5×5"); the routine editor displays it beside
+  the muscle group but offers no way to change or clear it. Exercise-entry notes
+  are still written and read nowhere.
+- **A prebuilt routine can be started without being kept, and that is the
+  primary action.** `startWorkoutSessionFromPrebuiltRoutine` writes
+  `session_exercises` and nothing else, so `/history` shows the workout with no
+  record anywhere of which programme it came from — the same blind spot a
+  started routine has, one step wider.
+- **A prebuilt routine names its exercises as strings.** They are resolved
+  against the *global* catalog by name at copy time, so renaming a seeded
+  exercise, or shipping a typo in `src/lib/prebuilt-routines.ts`, breaks the
+  copy with a 500 rather than a bad row. A test asserts every name is in
+  `GLOBAL_EXERCISES`, which catches the typo but not the rename.
 - **Component coverage is only what the end-to-end journeys walk through.**
   There is no component-level test runner — no jsdom, no Testing Library — so a
-  component off those paths is verified by hand. The four routines components
+  component off those paths is verified by hand. The six routines components
   are covered only by `e2e/routines.spec.ts`.
 - **Handler tests mock the session.** `currentUserId` is replaced wholesale in
   `src/app/api/routes.test.ts`; the end-to-end suite is what actually exercises
@@ -421,7 +447,7 @@ this one alone is a slow app with nothing obviously wrong with it.
   controls disabled until the write lands, but nothing stops a user leaving the
   page in that window, and they will have seen the set appear. A durable fix is
   a persisted mutation queue.
-- **The first paint and the cache are two sources of truth.** `/log` renders
+- **The first paint and the cache are two sources of truth.** `/workout` renders
   from `getActiveWorkoutSessionDetail` and the cache refetches
   `GET /api/workout-sessions?active=true`. They agree today because they are the
   same call; nothing enforces that they keep agreeing.

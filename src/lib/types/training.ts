@@ -7,7 +7,7 @@
  * src/server/**, and the two differ anyway, because a timestamp is a `Date` in
  * the service layer and an ISO string once it has been through JSON.
  */
-import type { MuscleGroup } from "../muscle-groups";
+import type { MuscleGroup } from "@/lib/muscle-groups";
 
 export type ExerciseSummary = {
   id: string;

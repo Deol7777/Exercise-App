@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccount } from "@/app/_lib/require-account";
 import { Screen, ScreenHeader } from "@/components/layout/screen";
-import { RoutineEditor } from "@/components/routines/routine-editor";
+import { RoutineEditor } from "@/features/routines/components/routine-editor";
 import { plural } from "@/lib/format";
 import type { RoutineDetailView } from "@/lib/types/routines";
 import type { ExerciseSummary } from "@/lib/types/training";

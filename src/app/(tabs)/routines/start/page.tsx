@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { requireAccount } from "@/app/_lib/require-account";
 import { Screen, ScreenHeader } from "@/components/layout/screen";
-import { RoutineStartList } from "@/components/routines/routine-start-list";
+import { RoutineStartList } from "@/features/routines/components/routine-start-list";
 import { Mascot } from "@/components/ui/mascot";
 import { Surface } from "@/components/ui/surface";
 import type { RoutineListItem } from "@/lib/types/routines";
@@ -32,7 +32,7 @@ export default async function StartRoutinePage() {
    * Only one workout session may be in progress, so with one already open there
    * is nothing to pick — the service would refuse every card on this page.
    */
-  if (active) redirect("/log");
+  if (active) redirect("/workout");
 
   return (
     <Screen>

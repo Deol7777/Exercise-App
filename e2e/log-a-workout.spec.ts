@@ -25,7 +25,7 @@ async function addExercise(page: import("@playwright/test").Page, name: string) 
   await page.getByLabel("Add an exercise").click();
   await page.getByRole("option", { name, exact: true }).click();
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await page.waitForURL(/\/log\/[0-9a-f-]+$/);
+  await page.waitForURL(/\/workout\/[0-9a-f-]+$/);
 }
 
 /**
@@ -56,7 +56,7 @@ const tabBar = (page: import("@playwright/test").Page) =>
 
 const TAB_URLS = {
   Home: /\/$/,
-  Workout: /\/log$/,
+  Workout: /\/workout$/,
   Routines: /\/routines$/,
   History: /\/history$/,
   Progress: /\/progress$/,
@@ -157,7 +157,7 @@ test("corrects a set, and shows every weight in the chosen unit", async ({ page 
     page.getByRole("option", { name: "Pounds" }).click(),
   ]);
 
-  await page.goto("/log");
+  await page.goto("/workout");
   /** 102.5 kg is 225.97 lb, shown to one decimal place. */
   await expect(page.getByText("5 × 226 lb")).toBeVisible();
 
@@ -199,7 +199,7 @@ test("keeps one user's log away from another", async ({ page, context }) => {
   await context.clearCookies();
   await signUp(page, account());
 
-  await page.goto("/log");
+  await page.goto("/workout");
   await expect(page.getByText("No workout in progress")).toBeVisible();
 
   await page.goto("/history");
@@ -261,7 +261,7 @@ test("a session that outlives its account lands on sign-in, not an error", async
   const deleted = await page.request.delete("/api/users/me");
   expect(deleted.status()).toBe(204);
 
-  await page.goto("/log");
+  await page.goto("/workout");
   await expect(page).toHaveURL(/\/sign-in/);
 
   await page.goto("/progress");
@@ -287,7 +287,7 @@ test("logs a set from the stepper, and corrects it there", async ({ page }) => {
   /** And the whole card on the list is the way back in. */
   await openTab(page, "Workout");
   await page.getByRole("link", { name: "Log Barbell Bench Press" }).click();
-  await expect(page).toHaveURL(/\/log\/[0-9a-f-]+$/);
+  await expect(page).toHaveURL(/\/workout\/[0-9a-f-]+$/);
 
   /**
    * With nothing logged and no history for this exercise, the stepper opens on

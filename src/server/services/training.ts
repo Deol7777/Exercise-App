@@ -29,10 +29,11 @@ import {
   type WorkoutSessionDetail,
   type WorkoutSessionRecord,
   type WorkoutSessionSummary,
-} from "../db/queries/training";
-import { findRoutineDetail } from "../db/queries/routines";
-import { ConflictError, InvalidError, NotFoundError } from "../errors";
+} from "@/server/db/queries/training";
+import { findRoutineDetail } from "@/server/db/queries/routines";
+import { ConflictError, InvalidError, NotFoundError } from "@/server/errors";
 import { getExercise } from "./exercises";
+import { getPrebuiltRoutineLines } from "./routines";
 
 export type {
   ExerciseEntryRecord,
@@ -104,6 +105,39 @@ export async function startWorkoutSessionFromRoutine(
       exerciseId: line.exercise.id,
       notes: line.notes,
     })),
+  });
+}
+
+/**
+ * Starts a workout session from one of the shipped programmes
+ * (src/lib/prebuilt-routines.ts) without keeping a routine for it.
+ *
+ * The same copy as `startWorkoutSessionFromRoutine`, one step earlier: a
+ * prebuilt routine is not a row, so there is nothing to own, nothing to look up
+ * by user, and nothing to delete afterwards. Someone who wants to keep it
+ * copies it into their own routines instead — the two are separate choices on
+ * the same screen.
+ *
+ * The exercises and their prescriptions come from `getPrebuiltRoutineLines` in
+ * ./routines.ts, so this and the copy cannot disagree about what the programme
+ * contains. `assertCanStart` runs *after* the programme is resolved, matching
+ * the routine path: an unknown slug is `not_found` rather than `conflict` when
+ * the caller also has a session open.
+ */
+export async function startWorkoutSessionFromPrebuiltRoutine(
+  userId: string,
+  prebuiltId: string,
+  input: { startedAt?: string; notes?: string } = {},
+): Promise<WorkoutSessionRecord> {
+  const { exercises } = await getPrebuiltRoutineLines(prebuiltId);
+
+  const startedAt = await assertCanStart(userId, input.startedAt);
+
+  return insertWorkoutSessionWithExercises({
+    userId,
+    startedAt,
+    notes: input.notes ?? null,
+    exercises,
   });
 }
 

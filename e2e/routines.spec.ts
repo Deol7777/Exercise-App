@@ -74,7 +74,7 @@ test("builds a routine, starts it, and keeps the workout a copy", async ({ page 
   await page.getByRole("link", { name: "Start routine" }).click();
   await page.waitForURL(/\/routines\/start$/);
   await page.getByRole("button", { name: /Push Day/ }).click();
-  await page.waitForURL(/\/log$/);
+  await page.waitForURL(/\/workout$/);
 
   await expect(page.getByText("Workout in progress")).toBeVisible();
 
@@ -91,7 +91,7 @@ test("builds a routine, starts it, and keeps the workout a copy", async ({ page 
 
   /** And reaching the picker directly bounces to the workout already running. */
   await page.goto("/routines/start");
-  await page.waitForURL(/\/log$/);
+  await page.waitForURL(/\/workout$/);
 
   /** Now edit the routine. The workout already started must not follow it. */
   await tabBar(page).getByRole("link", { name: "Routines" }).click();
@@ -104,7 +104,7 @@ test("builds a routine, starts it, and keeps the workout a copy", async ({ page 
 
   /** The copy is a copy: the workout still has the exercise the routine just lost. */
   await tabBar(page).getByRole("link", { name: "Workout" }).click();
-  await page.waitForURL(/\/log$/);
+  await page.waitForURL(/\/workout$/);
   await expect(page.getByText("2. Dip")).toBeVisible();
 });
 
@@ -126,6 +126,76 @@ test("deletes a routine without touching the workouts started from it", async ({
   await page.getByRole("button", { name: "Delete Leg Day" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.getByText("No routines yet.")).toBeVisible();
+});
+
+test("starts a workout straight from a prebuilt programme, keeping nothing", async ({ page }) => {
+  await signUp(page);
+
+  await page.goto("/routines/prebuilt/ppl-legs");
+
+  /** Start is the primary action; copying is the second, quieter one. */
+  await page.getByRole("button", { name: "Start routine" }).click();
+  await page.waitForURL(/\/workout$/, { timeout: 20_000 });
+  await expect(page.getByText("Workout in progress")).toBeVisible();
+  await expect(page.getByText("1. Back Squat")).toBeVisible();
+  await expect(page.getByText("6. Hanging Leg Raise")).toBeVisible();
+
+  /** Nothing was kept: the programme is not now a routine of this account's. */
+  await tabBar(page).getByRole("link", { name: "Routines" }).click();
+  await page.waitForURL(/\/routines$/);
+  await expect(page.getByText("No routines yet.")).toBeVisible();
+
+  /** With that workout open, the primary action is the door back to it. */
+  await page.goto("/routines/prebuilt/ppl-push");
+  await expect(page.getByRole("button", { name: "Start routine" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Continue workout" }).click();
+  await page.waitForURL(/\/workout$/);
+});
+
+test("copies a prebuilt programme and starts it", async ({ page }) => {
+  await signUp(page);
+
+  await tabBar(page).getByRole("link", { name: "Routines" }).click();
+  await page.waitForURL(/\/routines$/);
+
+  /** The switch is links, so this is a navigation, not local state. */
+  await page.getByRole("link", { name: "Prebuilt" }).click();
+  await page.waitForURL(/\/routines\?tab=prebuilt$/);
+
+  await page.getByRole("list", { name: "StrongLifts 5×5" })
+    .getByRole("link", { name: "Workout A" })
+    .click();
+  await page.waitForURL(/\/routines\/prebuilt\/stronglifts-5x5-a$/);
+
+  /** The exercises are shown before the button: copying is a decision about the list. */
+  await expect(page.getByRole("list", { name: "Exercises in Workout A" }).getByRole("listitem")).toHaveCount(3);
+
+  await page.getByRole("button", { name: "Copy to my routines" }).click();
+
+  /** It lands on the copy — a routine of this account's, editable like any other. */
+  await page.waitForURL(/\/routines\/[0-9a-f-]+$/, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "StrongLifts 5×5 · Workout A" })).toBeVisible();
+  await expect(routineExercises(page)).toHaveCount(3);
+  await expect(routineExercises(page).first()).toContainText("Back Squat");
+
+  /** And it is in the user's own half of the tab, not the prebuilt one. */
+  await tabBar(page).getByRole("link", { name: "Routines" }).click();
+  await page.waitForURL(/\/routines$/);
+  await expect(page.getByRole("link", { name: "StrongLifts 5×5 · Workout A" })).toBeVisible();
+
+  /** A second copy collides with the name the first one took. */
+  await page.goto("/routines/prebuilt/stronglifts-5x5-a");
+  await page.getByRole("button", { name: "Copy to my routines" }).click();
+  await expect(
+    page.getByText("You already have a routine called StrongLifts 5×5 · Workout A."),
+  ).toBeVisible();
+
+  /** Starting it is the ordinary path: the copy is just a routine now. */
+  await page.goto("/routines/start");
+  await page.getByRole("button", { name: /StrongLifts/ }).click();
+  await page.waitForURL(/\/workout$/);
+  await expect(page.getByText("1. Back Squat")).toBeVisible();
+  await expect(page.getByText("3. Barbell Row")).toBeVisible();
 });
 
 test("offers no way into the picker before there is a routine to pick", async ({ page }) => {

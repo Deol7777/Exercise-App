@@ -6,7 +6,7 @@
  * src/server/db/queries/routines.ts: a client component may not import from
  * src/server/**, and a timestamp is a `Date` there and an ISO string here.
  */
-import type { MuscleGroup } from "../muscle-groups";
+import type { MuscleGroup } from "@/lib/muscle-groups";
 
 export type RoutineListItem = {
   id: string;

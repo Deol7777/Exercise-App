@@ -5,12 +5,20 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createUser, globalExercise } from "@/test/factories";
+import { createUser, globalExercise } from "@/testing/factories";
 
-import { DomainError } from "../errors";
+import { DomainError } from "@/server/errors";
 import { createCustomExercise } from "./exercises";
 import {
+  PREBUILT_ROUTINES,
+  prebuiltRoutineName,
+  findPrebuiltRoutine,
+} from "@/lib/prebuilt-routines";
+import { GLOBAL_EXERCISES } from "@/server/db/seed-data";
+
+import {
   addRoutineExercise,
+  copyPrebuiltRoutine,
   createRoutine,
   editRoutine,
   getRoutine,
@@ -231,5 +239,95 @@ describe("the order of a routine", () => {
     const [line] = (await getRoutine(owner, routine.id)).exercises;
 
     expect(await codeOf(() => removeRoutineExercise(stranger, line.id))).toBe("not_found");
+  });
+});
+
+describe("the prebuilt routines", () => {
+  /**
+   * The one thing that cannot be caught by types: a prebuilt routine names its
+   * movements as strings, and a name the catalog does not have is a routine
+   * that copies without one of its lifts.
+   */
+  it("only names exercises the global catalog actually has", () => {
+    const catalog = new Set<string>(GLOBAL_EXERCISES.map((exercise) => exercise.name));
+    const missing = PREBUILT_ROUTINES.flatMap((routine) =>
+      routine.exercises
+        .filter((line) => !catalog.has(line.exercise))
+        .map((line) => `${routine.slug}: ${line.exercise}`),
+    );
+
+    expect(missing).toEqual([]);
+  });
+
+  it("has a unique slug and a unique name per routine", () => {
+    const slugs = PREBUILT_ROUTINES.map((routine) => routine.slug);
+    const names = PREBUILT_ROUTINES.map(prebuiltRoutineName);
+
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("copies one into a user's own routines, in order, with its schemes", async () => {
+    const userId = await createUser();
+    const prebuilt = findPrebuiltRoutine("ppl-push")!;
+
+    const copied = await copyPrebuiltRoutine(userId, prebuilt.slug);
+    const detail = await getRoutine(userId, copied.id);
+
+    expect(detail.name).toBe("Push Pull Legs · Push");
+    expect(detail.exercises.map((line) => line.exercise.name)).toEqual(
+      prebuilt.exercises.map((line) => line.exercise),
+    );
+    expect(detail.exercises.map((line) => line.position)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(detail.exercises.map((line) => line.notes)).toEqual(
+      prebuilt.exercises.map((line) => line.scheme),
+    );
+  });
+
+  /** 5/3/1 does the same lift twice in a session, at two prescriptions. */
+  it("keeps a movement that appears twice, twice", async () => {
+    const userId = await createUser();
+    const copied = await copyPrebuiltRoutine(userId, "531-bbb-squat");
+    const detail = await getRoutine(userId, copied.id);
+
+    const squats = detail.exercises.filter((line) => line.exercise.name === "Back Squat");
+    expect(squats).toHaveLength(2);
+    expect(squats[0].notes).not.toBe(squats[1].notes);
+  });
+
+  it("is a copy: editing it afterwards is editing the user's own routine", async () => {
+    const userId = await createUser();
+    const copied = await copyPrebuiltRoutine(userId, "full-body-beginner");
+
+    await editRoutine(userId, copied.id, { name: "Mondays" });
+    const list = await listRoutinesFor(userId);
+
+    expect(list.map((routine) => routine.name)).toEqual(["Mondays"]);
+    /** The prebuilt one is untouched, so it can be copied again under its own name. */
+    expect(findPrebuiltRoutine("full-body-beginner")?.day).toBe("Three days a week");
+    await expect(copyPrebuiltRoutine(userId, "full-body-beginner")).resolves.toBeTruthy();
+  });
+
+  it("refuses a second copy of the same programme, and leaves nothing behind", async () => {
+    const userId = await createUser();
+    await copyPrebuiltRoutine(userId, "stronglifts-5x5-a");
+
+    expect(await codeOf(() => copyPrebuiltRoutine(userId, "stronglifts-5x5-a"))).toBe("conflict");
+    expect(await listRoutinesFor(userId)).toHaveLength(1);
+  });
+
+  it("copies the same programme for two users independently", async () => {
+    const [one, other] = [await createUser(), await createUser()];
+
+    const mine = await copyPrebuiltRoutine(one, "upper-lower-upper");
+    const theirs = await copyPrebuiltRoutine(other, "upper-lower-upper");
+
+    expect(mine.id).not.toBe(theirs.id);
+    expect(await codeOf(() => getRoutine(other, mine.id))).toBe("not_found");
+  });
+
+  it("reports an unknown slug as not_found", async () => {
+    const userId = await createUser();
+    expect(await codeOf(() => copyPrebuiltRoutine(userId, "no-such-programme"))).toBe("not_found");
   });
 });

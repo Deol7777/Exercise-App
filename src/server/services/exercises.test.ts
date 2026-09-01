@@ -4,10 +4,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { createUser } from "@/test/factories";
+import { createUser } from "@/testing/factories";
 
-import { GLOBAL_EXERCISES } from "../db/seed-data";
-import { DomainError } from "../errors";
+import { GLOBAL_EXERCISES } from "@/server/db/seed-data";
+import { DomainError } from "@/server/errors";
 import { createCustomExercise, getExercise, listExercises } from "./exercises";
 
 describe("the catalog", () => {

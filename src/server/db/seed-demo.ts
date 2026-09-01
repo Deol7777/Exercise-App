@@ -23,9 +23,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 /** Relative, not "@/": tsx runs this outside Next's resolver (see schema/exercises.ts). */
-import { shiftZonedWeeks, startOfZonedWeek, zonedDate, zonedInstant } from "../../lib/time-zone";
+import { shiftZonedWeeks, startOfZonedWeek, zonedDate, zonedInstant } from "@/lib/time-zone";
 
-import { exercises, sessionExercises, sets, users, workoutSessions } from "./schema";
+import { users } from "@/server/db/schema/auth";
+import { exercises } from "@/server/db/schema/exercises";
+import { sessionExercises, sets, workoutSessions } from "@/server/db/schema/training";
 
 process.loadEnvFile(".env.local");
 

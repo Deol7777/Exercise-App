@@ -31,6 +31,16 @@ export const updateRoutineSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, "Send at least one field to change.");
 
+/**
+ * Copying a shipped programme into your own routines. The id is a slug from
+ * src/lib/prebuilt-routines.ts, not a uuid — prebuilt routines are content in
+ * the codebase, not rows — and whether it names a real one is the service's
+ * question, not the schema's.
+ */
+export const copyPrebuiltRoutineSchema = z.object({
+  prebuiltId: z.string().trim().min(1, "Pick a routine.").max(120),
+});
+
 export const addRoutineExerciseSchema = z.object({
   exerciseId: z.uuid("Pick an exercise."),
   notes: notes.optional(),
@@ -47,5 +57,6 @@ export const reorderRoutineExercisesSchema = z.object({
 
 export type CreateRoutineInput = z.infer<typeof createRoutineSchema>;
 export type UpdateRoutineInput = z.infer<typeof updateRoutineSchema>;
+export type CopyPrebuiltRoutineInput = z.infer<typeof copyPrebuiltRoutineSchema>;
 export type AddRoutineExerciseInput = z.infer<typeof addRoutineExerciseSchema>;
 export type ReorderRoutineExercisesInput = z.infer<typeof reorderRoutineExercisesSchema>;
