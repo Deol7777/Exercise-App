@@ -2,19 +2,11 @@
 
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { AuthError, AuthField } from "@/features/auth/components/auth-field";
+import { AuthScreen } from "@/features/auth/components/auth-screen";
+import { PillButton } from "@/components/ui/pill-button";
 import { signInSchema } from "@/lib/validation/auth";
 
 export default function SignInPage() {
@@ -52,44 +44,31 @@ export default function SignInPage() {
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center p-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Sign in</CardTitle>
-          <CardDescription>Your training log is yours alone.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" name="email" type="email" autoComplete="email" required />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                />
-              </Field>
-              {error ? <FieldError>{error}</FieldError> : null}
-              <Button type="submit" disabled={pending}>
-                {pending ? "Signing in…" : "Sign in"}
-              </Button>
-              <p className="text-muted-foreground text-sm">
-                No account?{" "}
-                <Link href="/sign-up" className="underline underline-offset-4">
-                  Create one
-                </Link>
-                .
-              </p>
-            </FieldGroup>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+    <AuthScreen mode="sign-in" title="Welcome back." subtitle="The frog remembers you.">
+      <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <AuthField
+          id="email"
+          name="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@den.com"
+          required
+        />
+        <AuthField
+          id="password"
+          name="password"
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="••••••••"
+          required
+        />
+        {error ? <AuthError>{error}</AuthError> : null}
+        <PillButton type="submit" disabled={pending} className="mt-1">
+          {pending ? "Opening…" : "Enter the den"}
+        </PillButton>
+      </form>
+    </AuthScreen>
   );
 }

@@ -46,7 +46,7 @@ async function signUp(page: import("@playwright/test").Page, email: string) {
   await page.goto("/sign-up");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Claim your spot" }).click();
   /** The tab bar renders only for a signed-in user, so it is the arrival signal. */
   await expect(tabBar(page)).toBeVisible();
 }
@@ -237,7 +237,7 @@ test("deletes an account, and everything in it", async ({ page }) => {
   /** The account is gone, so the old password no longer signs anyone in. */
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Enter the den" }).click();
   await expect(page.getByText("That email and password do not match an account.")).toBeVisible();
 
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });

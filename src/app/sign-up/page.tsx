@@ -2,25 +2,11 @@
 
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { AuthError, AuthField } from "@/features/auth/components/auth-field";
+import { AuthScreen } from "@/features/auth/components/auth-screen";
+import { PillButton } from "@/components/ui/pill-button";
 import { registerSchema } from "@/lib/validation/auth";
 
 export default function SignUpPage() {
@@ -36,7 +22,6 @@ export default function SignUpPage() {
     const parsed = registerSchema.safeParse({
       email: form.get("email"),
       password: form.get("password"),
-      name: form.get("name") || undefined,
     });
 
     if (!parsed.success) {
@@ -80,50 +65,31 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center p-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Create an account</CardTitle>
-          <CardDescription>Then start logging sessions.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="name">Name</FieldLabel>
-                <Input id="name" name="name" autoComplete="name" />
-                <FieldDescription>Optional.</FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" name="email" type="email" autoComplete="email" required />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                />
-                <FieldDescription>At least 10 characters.</FieldDescription>
-              </Field>
-              {error ? <FieldError>{error}</FieldError> : null}
-              <Button type="submit" disabled={pending}>
-                {pending ? "Creating…" : "Create account"}
-              </Button>
-              <p className="text-muted-foreground text-sm">
-                Already have one?{" "}
-                <Link href="/sign-in" className="underline underline-offset-4">
-                  Sign in
-                </Link>
-                .
-              </p>
-            </FieldGroup>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+    <AuthScreen mode="sign-up" title="Join the gym." subtitle="A new beast approaches.">
+      <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <AuthField
+          id="email"
+          name="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@den.com"
+          required
+        />
+        <AuthField
+          id="password"
+          name="password"
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="At least 10 characters"
+          required
+        />
+        {error ? <AuthError>{error}</AuthError> : null}
+        <PillButton type="submit" disabled={pending} className="mt-1">
+          {pending ? "Claiming…" : "Claim your spot"}
+        </PillButton>
+      </form>
+    </AuthScreen>
   );
 }

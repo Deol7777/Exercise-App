@@ -286,7 +286,7 @@ assistant to understand the domain.
 | `progress` | Records, charts and the muscle radar, plus the chart-axis maths in `utils/chart.ts` | `/progress` |
 | `history` | The month calendar | `/history` |
 | `account` | Theme, display unit, account deletion | `/settings` |
-| `auth` | Sign-out | `/settings` |
+| `auth` | The sign-in/sign-up doorway — its shell, its fields — and sign-out | `/sign-in`, `/sign-up`, `/settings` |
 | `home` | The greeting | `/` |
 
 Shared UI that is deliberately **not** in a feature: `components/ui/**` (the shadcn
@@ -299,11 +299,12 @@ Recorded rather than hidden, so they are fixed deliberately:
 
 - **Pages over ~50 lines.** `(tabs)/progress/page.tsx` (351) and `app/page.tsx` (279)
   are the worst; `workout/[entryId]`, `history/[id]`, `sign-up`, `history` and `sign-in`
-  also exceed it. The excess is layout composition, not business logic, but it
+  also exceed it (the two auth pages are now the form and nothing else — the
+  chrome around it is `features/auth/components/auth-screen.tsx`). The excess is layout composition, not business logic, but it
   belongs in feature components.
 - **No `hooks/` anywhere.** Client state is local to components today.
-- **`features/auth` and `features/home` own one component each.** They are real
-  domains, not premature folders, but they will look thin until more lands.
+- **`features/home` owns one component.** It is a real domain, not a premature
+  folder, but it will look thin until more lands.
 
 ---
 

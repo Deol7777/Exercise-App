@@ -18,7 +18,7 @@ async function signUp(page: import("@playwright/test").Page) {
   await page.goto("/sign-up");
   await page.getByLabel("Email").fill(account());
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Claim your spot" }).click();
   await expect(tabBar(page)).toBeVisible();
 }
 
