@@ -93,7 +93,15 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${display.variable} ${body.variable} ${geistMono.variable} h-full antialiased${dark ? " dark" : ""}`}
       style={{ colorScheme: dark ? "dark" : "light" }}
     >
-      <body className="min-h-full flex flex-col">
+      {/**
+       * `suppressHydrationWarning` because browser extensions write to `<body>`
+       * before React hydrates — Grammarly adds `data-gr-ext-installed` and
+       * `data-new-gr-c-s-check-loaded`, and nothing the server rendered can
+       * match them. It suppresses one level only: the attributes and text of
+       * this element, never its children, so a real mismatch inside the app
+       * still reports.
+       */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <Providers>
           {children}
         </Providers>
